@@ -1,0 +1,7 @@
+F = ^ Q {
+  Q = 17
+  return ^ { return Q }
+}
+
+Print F(0)()
+

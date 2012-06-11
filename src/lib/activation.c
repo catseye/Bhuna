@@ -59,8 +59,13 @@ activation_new_on_stack(int size, struct activation *caller,
 {
 	struct activation *a;
 
+#ifdef NO_AR_STACK
+	a = activation_new_on_heap(size, caller, enclosing);
+#else
 	a = (struct activation *)vm->astack_ptr;
 	vm->astack_ptr += sizeof(struct activation) + sizeof(struct value *) * size;
+	if (vm->astack_ptr > vm->astack_hi)
+		vm->astack_hi = vm->astack_ptr;
 
 	a->size = size;
 	a->admin = AR_ADMIN_ON_STACK;
@@ -75,7 +80,7 @@ activation_new_on_stack(int size, struct activation *caller,
 	}
 	activations_allocated++;
 #endif
-
+#endif
 	return(a);
 }
 
@@ -98,6 +103,7 @@ activation_free_from_heap(struct activation *a)
 void
 activation_free_from_stack(struct activation *a, struct vm *vm)
 {
+#ifndef NO_AR_STACK
 #ifdef DEBUG
 	if (trace_activations > 1) {
 		printf("[ARC] freeing from STACK ");
@@ -109,6 +115,7 @@ activation_free_from_stack(struct activation *a, struct vm *vm)
 
 	vm->astack_ptr -= (sizeof(struct activation) +
 			   sizeof(struct value *) * a->size);
+#endif
 }
 
 struct value *

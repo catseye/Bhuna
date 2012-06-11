@@ -12,9 +12,8 @@
 extern int trace_scheduling;
 
 struct process		*current_process = NULL;
-
-static struct process	*run_head = NULL;
-static struct process	*wait_head = NULL;
+struct process		*run_head = NULL;
+struct process		*wait_head = NULL;
 
 static int		 procno = 1;
 
@@ -39,6 +38,12 @@ void
 process_free(struct process *p)
 {
 	if (p == NULL) return;
+
+#ifdef DEBUG
+	if (trace_scheduling)
+		printf("vm activation stack hiwater was %d bytes\n",
+		    p->vm->astack_hi - p->vm->astack);
+#endif
 
 	if (p->prev != NULL)
 		p->prev->next = p->next;

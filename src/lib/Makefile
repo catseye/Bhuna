@@ -7,6 +7,7 @@ SRCS=	report.c \
 	mem.c pool.c gc.c \
 	list.c atom.c buffer.c closure.c dict.c value.c \
 	activation.c \
+	icode.c \
 	gen.c vm.c \
 	process.c \
 	builtin.c \

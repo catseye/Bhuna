@@ -50,6 +50,7 @@ vm_new(vm_label_t program, size_t prog_size)
 	vm->astack_size = 65536;
 	vm->astack = bhuna_malloc(vm->astack_size * sizeof(unsigned char));
 	vm->astack_ptr = vm->astack;
+	vm->astack_hi = vm->astack;
 
 	return(vm);
 }
@@ -77,6 +78,22 @@ dump_stack(struct vm *vm)
 		printf("\n");
 	}
 }
+
+static void
+dump_activation_stack(struct vm *vm)
+{
+	struct activation *a;
+	int i = 0;
+
+	for (a = (struct activation *)vm->astack;
+	     (unsigned char *)a < vm->astack_ptr;
+	     a += (sizeof(struct activation) +
+	     sizeof(struct value *) * a->size)) {
+		printf("ask@%02d: ", i++);
+		activation_dump(a, 0);
+		printf("\n");
+	}
+}
 #endif
 
 void
@@ -94,6 +111,7 @@ vm_run(struct vm *vm, int xmax)
 	struct builtin *ext_bi;
 	int varity;
 	int xcount = 0;
+	struct value *zero, *one, *two;
 	/*int upcount, index; */
 
 #ifdef DEBUG
@@ -101,6 +119,13 @@ vm_run(struct vm *vm, int xmax)
 		printf("___ virtual machine started ___\n");
 	}
 #endif
+
+	zero = value_new_integer(0);
+	value_deregister(zero);
+	one = value_new_integer(1);
+	value_deregister(one);
+	two = value_new_integer(2);
+	value_deregister(two);
 
 	while (*vm->pc != INSTR_HALT) {
 #ifdef DEBUG
@@ -110,9 +135,6 @@ vm_run(struct vm *vm, int xmax)
 		}
 #endif
 		if (((++xcount) & 0xff) == 0) {
-			if (xcount >= xmax)
-				return(VM_TIME_EXPIRED);
-
 			if (a_count + v_count > gc_target) {
 #ifdef DEBUG
 				if (trace_gc > 0) {
@@ -120,9 +142,10 @@ vm_run(struct vm *vm, int xmax)
 						a_count, v_count);
 					/*activation_dump(current_ar, 0);
 					printf("\n");*/
+					dump_activation_stack(vm);
 				}
 #endif
-				/*gc(vm);*/
+				gc();
 #ifdef DEBUG
 				if (trace_gc > 0) {
 					printf("[ARC] GARBAGE COLLECTION FINISHED, now %d activation records + %d values\n",
@@ -138,6 +161,12 @@ vm_run(struct vm *vm, int xmax)
 				 */
 				gc_target = a_count + v_count + gc_trigger;
 			}
+			
+			/*
+			 * Also, give up control if we've exceeded our timeslice.
+			 */
+			if (xcount >= xmax)
+				return(VM_TIME_EXPIRED);
 		}
 
 		switch (*vm->pc) {
@@ -306,6 +335,31 @@ vm_run(struct vm *vm, int xmax)
 			vm->pc += sizeof(struct value *);
 			break;
 
+		case INSTR_PUSH_ZERO:
+#ifdef DEBUG
+			if (trace_vm) {
+				printf("INSTR_PUSH_ZERO\n");
+			}
+#endif
+			PUSH_VALUE(zero);
+			break;
+		case INSTR_PUSH_ONE:
+#ifdef DEBUG
+			if (trace_vm) {
+				printf("INSTR_PUSH_ONE\n");
+			}
+#endif
+			PUSH_VALUE(one);
+			break;
+		case INSTR_PUSH_TWO:
+#ifdef DEBUG
+			if (trace_vm) {
+				printf("INSTR_PUSH_TWO\n");
+			}
+#endif
+			PUSH_VALUE(two);
+			break;
+
 		case INSTR_PUSH_LOCAL:
 			l = activation_get_value(vm->current_ar,
 			    *(vm->pc + 1), *(vm->pc + 2));
@@ -350,7 +404,9 @@ vm_run(struct vm *vm, int xmax)
 			label = *(vm_label_t *)(vm->pc + 1);
 #ifdef DEBUG
 			if (trace_vm) {
-				printf("INSTR_JZ -> #%d:\n", label - vm->program);
+				printf("INSTR_JZ -> ");
+				value_print(l);
+				printf(", #%d:\n", label - vm->program);
 			}
 #endif
 			if (!l->v.b) {
@@ -362,7 +418,7 @@ vm_run(struct vm *vm, int xmax)
 
 		case INSTR_CALL:
 			POP_VALUE(l);
-			label = l->v.k->ast->label;
+			label = l->v.k->label;
 			if (l->v.k->cc > 0) {
 				/*
 				 * Create a new activation record
@@ -405,7 +461,7 @@ vm_run(struct vm *vm, int xmax)
 
 		case INSTR_GOTO:
 			POP_VALUE(l);
-			label = l->v.k->ast->label;
+			label = l->v.k->label;
 
 			/*
 			 * DON'T create a new activation record for this leap
@@ -503,7 +559,7 @@ vm_run(struct vm *vm, int xmax)
 #ifdef DEBUG
 			if (trace_vm) {
 				printf("INSTR_SET_ACTIVATION #%d\n",
-				    l->v.k->ast->label - vm->program);
+				    l->v.k->label - vm->program);
 			}
 #endif
 			PUSH_VALUE(l);
@@ -574,7 +630,8 @@ vm_run(struct vm *vm, int xmax)
 			 */
 #ifdef DEBUG
 			if (trace_vm) {
-				printf("INSTR_BUILTIN(%s):\n", builtins[*vm->pc].name);
+				printf("INSTR_BUILTIN(#%d=%s):\n",
+				    *vm->pc, builtins[*vm->pc].name);
 			}
 #endif
 			varity = builtins[*vm->pc].arity;

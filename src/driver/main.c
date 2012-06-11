@@ -17,16 +17,17 @@
 #include "gc.h"
 #include "trace.h"
 #include "process.h"
+#include "icode.h"
 
 #ifdef POOL_VALUES
 #include "pool.h"
 #endif
 
 #ifdef DEBUG
-#define OPTS "cdgG:lmnopsvy"
+#define OPTS "cdgG:ilmnopsvy"
 #define RUN_PROGRAM run_program
 #else
-#define OPTS "G:"
+#define OPTS "G:i"
 #define RUN_PROGRAM 1
 #endif
 
@@ -46,6 +47,7 @@ usage(char **argv)
 	fprintf(stderr, "  -g: trace garbage collection\n");
 #endif
 	fprintf(stderr, "  -G int: set garbage collection threshold\n");
+	fprintf(stderr, "  -i: create and dump intermediate format\n");
 #ifdef DEBUG
 	fprintf(stderr, "  -l: trace bytecode generation (implies -x)\n");
 	fprintf(stderr, "  -m: trace virtual machine\n");
@@ -74,6 +76,7 @@ main(int argc, char **argv)
 	int dump_symbols = 0;
 	int dump_program = 0;
 #endif
+	int make_icode = 0;
 
 #ifdef DEBUG
 	setvbuf(stdout, NULL, _IOLBF, 0);
@@ -99,6 +102,9 @@ main(int argc, char **argv)
 #endif
 		case 'G':
 			gc_trigger = atoi(optarg);
+			break;
+		case 'i':
+			make_icode++;
 			break;
 #ifdef DEBUG
 		case 'l':
@@ -164,12 +170,26 @@ main(int argc, char **argv)
 #endif
 		err_count = report_finish();
 		if (err_count == 0) {
+			struct iprogram *ip;
 			struct vm *vm;
 			struct process *p;
 			unsigned char *program;
 
 			program = bhuna_malloc(16384);
-			ast_gen(&program, a);
+
+			if (make_icode > 0) {
+				ip = ast_gen_iprogram(a);
+				iprogram_eliminate_nops(ip);
+				iprogram_optimize_tail_calls(ip);
+				iprogram_optimize_push_small_ints(ip);
+				iprogram_eliminate_dead_code(ip);
+				iprogram_gen(&program, ip);
+				if (make_icode > 1)
+					iprogram_dump(ip, program);
+			} else {
+				ast_gen(&program, a);
+			}
+
 			vm = vm_new(program, 16384);
 			vm_set_pc(vm, program);
 			vm->current_ar = global_ar;

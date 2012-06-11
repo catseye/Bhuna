@@ -5,9 +5,12 @@
 
 struct activation;
 struct ast;
+struct icode;
 
 struct closure {
-	struct ast		*ast;
+	struct ast		*ast;	/* where it is in AST */
+	struct icode		*icode;	/* where it is in icode */
+	vm_label_t		 label;	/* where it is in vm */
 	struct activation	*ar;	/* env in which we were created */
 	int			 arity;	/* takes this many arguments */
 	int			 locals;/* has this many local variables */

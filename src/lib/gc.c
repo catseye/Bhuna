@@ -11,6 +11,7 @@
 #include "closure.h"
 #include "gc.h"
 #include "vm.h"
+#include "process.h"
 
 #ifdef POOL_VALUES
 #include "pool.h"
@@ -48,7 +49,7 @@ value_mark(struct value *v)
 {
 	struct list *l;
 
-	if (v == NULL || v->admin & ADMIN_MARKED || v->admin & ADMIN_PERMANENT)
+	if (v == NULL || v->admin & ADMIN_MARKED) /* || v->admin & ADMIN_PERMANENT) */
 		return;
 
 #ifdef DEBUG
@@ -88,7 +89,7 @@ activation_mark(struct activation *a)
 
 	if (a == NULL)
 		return;
-	if (a->admin & AR_ADMIN_MARKED || a->admin & AR_ADMIN_ON_STACK) {
+	if (a->admin & AR_ADMIN_MARKED) {
 #ifdef DEBUG
 		if (trace_gc > 1) {
 			printf("[GC] ar ");
@@ -116,8 +117,9 @@ activation_mark(struct activation *a)
 }
 
 void
-gc(struct vm *vm)
+gc(void)
 {
+	struct process *p;
 	struct activation *a, *a_next;
 	struct activation *ta_head = NULL;
 	struct value *v;
@@ -132,16 +134,18 @@ gc(struct vm *vm)
 	/*
 	 * Mark...
 	 */
-	activation_mark(vm->current_ar);
-	for (vsc = vm->vstack; vsc < vm->vstack_ptr; vsc++)
-		value_mark(*vsc);
+	for (p = run_head; p != NULL; p = p->next) {
+		activation_mark(p->vm->current_ar);
+		for (vsc = p->vm->vstack; vsc < p->vm->vstack_ptr; vsc++)
+			value_mark(*vsc);
+	}
 
 	/*
 	 * ...and sweep
 	 */
 	for (a = a_head; a != NULL; a = a_next) {
 		a_next = a->next;
-		if (a->admin & AR_ADMIN_MARKED || a->admin & AR_ADMIN_ON_STACK) {
+		if (a->admin & AR_ADMIN_MARKED) {
 			a->admin &= ~AR_ADMIN_MARKED;
 			a->next = ta_head;
 			ta_head = a;

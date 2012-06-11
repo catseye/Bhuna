@@ -19,6 +19,9 @@ closure_new(struct ast *a, struct activation *ar, int arity, int locals, int cc)
 	c = bhuna_malloc(sizeof(struct closure));
 
 	c->ast = a;
+	c->icode = NULL;
+	c->label = NULL;
+
 	c->ar = ar;
 	c->arity = arity;
 	c->locals = locals;
@@ -38,7 +41,7 @@ closure_dump(struct closure *c)
 {
 #ifdef DEBUG
 	printf("closure/%d (l=%d,cc=%d){", c->arity, c->locals, c->cc);
-	activation_dump(c->ar, 1);
+	activation_dump(c->ar, 0);
 	/*ast_dump(c->ast, 1);*/	/* XXX for now... */
 	printf("}");
 #endif

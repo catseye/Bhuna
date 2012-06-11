@@ -8,6 +8,7 @@
 struct ast;
 struct value;
 struct activation;
+struct iprogram;
 
 typedef	unsigned char *	vm_label_t;
 
@@ -23,6 +24,10 @@ typedef	unsigned char *	vm_label_t;
 #define	INSTR_SET_ACTIVATION	137
 #define	INSTR_COW_LOCAL		138
 #define	INSTR_EXTERNAL		139
+#define	INSTR_NOP		140
+#define	INSTR_PUSH_ZERO		141
+#define	INSTR_PUSH_ONE		142
+#define	INSTR_PUSH_TWO		143
 
 struct vm {
 	vm_label_t	  program;	/* vm bytecode array */
@@ -40,6 +45,8 @@ struct vm {
 	unsigned char	 *astack;
 	size_t		  astack_size;	/* size of activation stack */
 	unsigned char	 *astack_ptr;	/* top of activation stack */
+
+	unsigned char	 *astack_hi;	/* hiwater mark on activation stack */
 	
 	struct activation *current_ar;	/* current activation record */
 };
@@ -56,6 +63,8 @@ struct vm	*vm_new(vm_label_t, size_t);
 void		 vm_free(struct vm *);
 
 void		 ast_gen(vm_label_t *, struct ast *);
+void		 iprogram_gen(vm_label_t *, struct iprogram *);
+
 void		 vm_set_pc(struct vm *, vm_label_t);
 int		 vm_run(struct vm *, int);
 

@@ -9,6 +9,8 @@ struct process {
 };
 
 extern struct process *current_process;
+extern struct process *run_head;
+extern struct process *wait_head;
 
 struct process	*process_new(struct vm *);
 void		 process_free(struct process *);

@@ -1,13 +1,10 @@
-function Fib(X)
-  if (X > 2) then
-    return (Fib(X - 1) + Fib(X - 2))
-  end
-  return 1
+-- $Id: fibo.lua.html,v 1.5 2004/07/03 07:11:33 bfulgham Exp $
+-- http://www.bagley.org/~doug/shootout/
+
+function fib(n)
+    if (n < 2) then return(1) end
+    return( fib(n-2) + fib(n-1) )
 end
 
-I = 1
-while I <= 25 do
-  print(Fib(I))
-  I = I + 1
-end
-
+N = tonumber((arg and arg[1])) or 1
+io.write(fib(N), "\n")

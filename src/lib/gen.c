@@ -10,6 +10,7 @@
 #include "closure.h"
 #include "activation.h"
 #include "builtin.h"
+#include "icode.h"
 
 extern int trace_gen;
 
@@ -213,6 +214,7 @@ gen_cow_local(int index, int upcount)
 	*gptr++ = (unsigned char)upcount;
 }
 
+/*** gen VM from AST ***/
 
 static void
 ast_gen_r(struct ast *a)
@@ -234,6 +236,7 @@ ast_gen_r(struct ast *a)
 		if (a->u.value.value->type == VALUE_CLOSURE) {
 			gen_set_activation();
 			gen_jmp_bp(&bpid_1);
+			a->u.value.value->v.k->label = gptr;
 			ast_gen_r(a->u.value.value->v.k->ast);
 			gen_ret();
 			backpatch(bpid_1);
@@ -312,4 +315,65 @@ ast_gen(vm_label_t *given_prog, struct ast *a)
 	gptr = *given_prog;
 	ast_gen_r(a);
 	*gptr++ = INSTR_HALT;
+}
+
+/*** gen VM from iprogram ***/
+
+void
+iprogram_gen(vm_label_t *given_prog, struct iprogram *ip)
+{
+	struct icode *ic;
+	struct {
+		vm_label_t label;
+		struct icode *icode;
+	} bp[2048];
+	int bpi = 0;
+	struct closure *k[2048];
+	int ki = 0;
+
+	program = *given_prog;
+	gptr = *given_prog;
+
+	for (ic = ip->head; ic != NULL; ic = ic->next) {
+		ic->label = gptr;
+		gen(ic->opcode);
+		switch (ic->opcode) {
+		case INSTR_PUSH_VALUE:
+			if (ic->operand.value->type == VALUE_CLOSURE) {
+				k[ki++] = ic->operand.value->v.k;
+			}
+			*(((struct value **)gptr)++) = ic->operand.value;
+			break;
+		case INSTR_PUSH_LOCAL:
+		case INSTR_POP_LOCAL:
+		case INSTR_COW_LOCAL:
+			*gptr++ = (unsigned char)ic->operand.local.index;
+			*gptr++ = (unsigned char)ic->operand.local.upcount;
+			break;
+		case INSTR_JZ:
+		case INSTR_JMP:
+			bp[bpi].label = gptr;
+			bp[bpi].icode = ic->operand.branch;
+			bpi++;
+			gptr += sizeof(vm_label_t);
+			break;
+		case INSTR_EXTERNAL:
+			*(((struct builtin **)gptr)++) = ic->operand.builtin;
+			break;
+		}
+	}
+
+	/* Backpatching run. */
+	bpi--;
+	while (bpi >= 0) {
+		*(vm_label_t *)bp[bpi].label = bp[bpi].icode->label;
+		bpi--;
+	}
+
+	/* Resolve addresses of all closures. */
+	ki--;
+	while (ki >= 0) {
+		k[ki]->label = k[ki]->icode->label;
+		ki--;
+	}
 }
