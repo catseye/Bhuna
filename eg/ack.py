@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python
 # $Id: ackermann.python.html,v 1.5 2004/07/03 07:11:34 bfulgham Exp $
 # http://www.bagley.org/~doug/shootout/
 # from Brad Knotwell

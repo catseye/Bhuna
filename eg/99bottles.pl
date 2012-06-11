@@ -1,4 +1,4 @@
-#!/usr/bin/perl
+#!/usr/bin/env perl
 
 $bottles = 9999;
 while ($bottles > 0) {

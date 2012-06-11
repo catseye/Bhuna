@@ -1,3 +1,4 @@
+#!/usr/bin/env lua
 -- $Id: ackermann.lua.html,v 1.5 2004/07/03 07:11:33 bfulgham Exp $
 -- http://www.bagley.org/~doug/shootout/
 

@@ -1,4 +1,4 @@
-#!/usr/bin/perl
+#!/usr/bin/env perl
 
 while ($d = <STDIN>) {
 	$ary[$1]++ if $d =~ /^\#(\d+)\:/;
