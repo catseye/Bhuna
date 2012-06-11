@@ -1,0 +1,21 @@
+// Ackermann function.  Derived from:
+// $Id: ackermann.lua.html,v 1.5 2004/07/03 07:11:33 bfulgham Exp $
+// http://www.bagley.org/~doug/shootout/
+
+Zero = 0
+One = 1
+Two = 2
+
+Ack = {
+    M = Arg[One]
+    N = Arg[Two]
+    if M = Zero
+	Return N + One
+    else if N = Zero
+	Return Ack(M - One, One)
+    else
+        Return Ack(M - One, Ack(M, (N - One)))
+}
+
+Num = 7
+Print "Ack(3,", Num, "): ", Ack(3, Num), EoL

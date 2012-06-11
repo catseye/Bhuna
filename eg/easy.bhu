@@ -1,0 +1,5 @@
+B = 1 + 4
+Print B
+B = B + 9
+Print B
+

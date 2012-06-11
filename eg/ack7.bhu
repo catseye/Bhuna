@@ -1,0 +1,20 @@
+// Ackermann function.  Derived from:
+// $Id: ackermann.lua.html,v 1.5 2004/07/03 07:11:33 bfulgham Exp $
+// http://www.bagley.org/~doug/shootout/
+
+Ack = ^ M,N {
+    if M = 0
+	return N + 1
+    else if N = 0
+	return Ack(M - 1, 1)
+    else
+        return Ack(M - 1, Ack(M, (N - 1)))
+}
+
+Num = 7
+// Print "Ack(3,", Num, "): ", Ack(3, Num), EoL
+Print "Ack(3,"
+Print Num
+Print "): "
+Print Ack(3, Num)
+Print EoL

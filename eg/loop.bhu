@@ -1,0 +1,7 @@
+X = 10
+while X > 0 {
+  Print X
+  Print EoL
+  X = X - 1
+}
+

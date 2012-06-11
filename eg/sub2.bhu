@@ -1,0 +1,8 @@
+Sub = ^ A, B, C {
+  Print "hello from Sub"
+  Print A
+  Print B
+  Print C
+}
+
+Sub "A", "B", "C"

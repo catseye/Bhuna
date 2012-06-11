@@ -1,0 +1,8 @@
+Fact = ^ X {
+  if X > 1
+    return X * Fact(X - 1)
+  else
+    return 1
+}
+
+Print Fact(6)

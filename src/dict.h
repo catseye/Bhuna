@@ -70,4 +70,6 @@ void			 dict_next(struct dict *);
 
 size_t			 dict_size(struct dict *);
 
+void			 dict_dump(struct dict *);
+
 #endif /* !__DICT_H_ */

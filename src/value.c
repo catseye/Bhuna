@@ -33,7 +33,7 @@
 /*
  * value.c
  * Values for Bhuna.
- * $Id: symbol.c 54 2004-04-23 22:51:09Z catseye $
+ * $Id$
  */
 
 #include <assert.h>
@@ -43,13 +43,18 @@
 
 #include "mem.h"
 #include "value.h"
-#include "symbol.h"
 #include "ast.h"
 #include "list.h"
+#include "dict.h"
 #include "closure.h"
+
+#ifdef POOL_VALUES
+#include "pool.h"
+#endif
 
 #ifdef DEBUG
 extern int trace_refcounting;
+extern int trace_valloc;
 extern int num_vars_created;
 extern int num_vars_grabbed;
 extern int num_vars_released;
@@ -102,6 +107,7 @@ value_dump_global_table(void)
 
 	printf("----- BEGIN Global Table of Values -----\n");
 	for (l = global_table; l != NULL; l = l->next) {
+		printf("%4d x ", l->value->refcount);
 		value_print(l->value);
 		printf("\n");
 	}
@@ -109,20 +115,24 @@ value_dump_global_table(void)
 #endif
 }
 
-/*** CONSTRUCTORS ***/
+/*** GENERIC CONSTRUCTOR ***/
 
-struct value *
+static struct value *
 value_new(int type)
 {
 	struct value *v;
 
-	v = malloc(sizeof(struct value));
+#ifdef POOL_VALUES
+	v = value_allocate();
+#else
+	v = bhuna_malloc(sizeof(struct value));
+#endif
 	bzero(v, sizeof(struct value));
 	v->type = type;
 	v->refcount = 1;
 
 #ifdef DEBUG
-	if (trace_refcounting > 0) {
+	if (trace_valloc > 0) {
 		add_value_to_global_table(v);
 		num_vars_created++;
 	}
@@ -131,204 +141,14 @@ value_new(int type)
 	return(v);
 }
 
-struct value *
-value_new_integer(int i)
-{
-	struct value *v;
-
-	v = value_new(VALUE_INTEGER);
-	v->v.i = i;
-
-#ifdef DEBUG
-	if (trace_refcounting > 1) {
-		printf("[RC] created ");
-		value_print(v);
-		printf("\n");
-	}
-#endif
-
-	return(v);
-}
-
-struct value *
-value_new_boolean(int b)
-{
-	struct value *v;
-
-	v = value_new(VALUE_BOOLEAN);
-	v->v.b = b;
-
-#ifdef DEBUG
-	if (trace_refcounting > 1) {
-		printf("[RC] created ");
-		value_print(v);
-		printf("\n");
-	}
-#endif
-
-	return(v);
-}
-
-struct value *
-value_new_atom(int atom)
-{
-	struct value *v;
-
-	v = value_new(VALUE_ATOM);
-	v->v.atom = atom;
-
-#ifdef DEBUG
-	if (trace_refcounting > 1) {
-		printf("[RC] created ");
-		value_print(v);
-		printf("\n");
-	}
-#endif
-
-	return(v);
-}
-
-struct value *
-value_new_string(char *s)
-{
-	struct value *v;
-
-	v = value_new(VALUE_STRING);
-	v->v.s = strdup(s);
-
-#ifdef DEBUG
-	if (trace_refcounting > 1) {
-		printf("[RC] created ");
-		value_print(v);
-		printf("\n");
-	}
-#endif
-
-	return(v);
-}
-
-struct value *
-value_new_list(void)
-{
-	struct value *v;
-
-	v = value_new(VALUE_LIST);
-	v->v.l = NULL;
-
-#ifdef DEBUG
-	if (trace_refcounting > 1) {
-		printf("[RC] created ");
-		value_print(v);
-		printf("\n");
-	}
-#endif
-
-	return(v);
-}
-
-struct value *
-value_new_symbol_table(struct symbol_table *stab)
-{
-	struct value *v;
-
-	v = value_new(VALUE_STAB);
-	v->v.stab = stab;
-
-#ifdef DEBUG
-	if (trace_refcounting > 1) {
-		printf("[RC] created ");
-		value_print(v);
-		printf("\n");
-	}
-#endif
-
-	return(v);
-}
-
-struct value *
-value_new_error(char *error)
-{
-	struct value *v;
-
-	v = value_new(VALUE_ERROR);
-	v->v.e = strdup(error);
-
-#ifdef DEBUG
-	if (trace_refcounting > 1) {
-		printf("[RC] created ");
-		value_print(v);
-		printf("\n");
-	}
-#endif
-
-	return(v);
-}
-
-struct value *
-value_new_builtin(void (*f)(struct value **))
-{
-	struct value *v;
-
-	v = value_new(VALUE_BUILTIN);
-	v->v.f = f;
-
-#ifdef DEBUG
-	if (trace_refcounting > 1) {
-		printf("[RC] created ");
-		value_print(v);
-		printf("\n");
-	}
-#endif
-
-	return(v);
-}
-
-struct value *
-value_new_closure(struct ast *a, struct activation *ar)
-{
-	struct value *v;
-
-	v = value_new(VALUE_CLOSURE);
-	v->v.k = closure_new(a, ar);
-
-#ifdef DEBUG
-	if (trace_refcounting > 1) {
-		printf("[RC] created ");
-		value_print(v);
-		printf("\n");
-	}
-#endif
-
-	return(v);
-}
-
-struct value *
-value_new_symbol(struct symbol *sym)
-{
-	struct value *v;
-
-	v = value_new(VALUE_SYMBOL);
-	v->v.sym = sym;
-
-#ifdef DEBUG
-	if (trace_refcounting > 1) {
-		printf("[RC] created ");
-		value_print(v);
-		printf("\n");
-	}
-#endif
-
-	return(v);
-}
-
-/*** DUPLICATOR ***/
+/*** UNCONDITIONAL DUPLICATOR ***/
 
 /*
  * Returns a copy of the given value.
  * The copy is not so 'deep' as it could be, but should be OK w/refcounting.
  * New strings (char arrays) are created when copying a string;
  * New list spines (struct list *) are created, but values are only grabbed, not dup'ed.
- * Symbol tables and AST's are not copied, only the pointers to them.
+ * Some things are not copied, only the pointers to them.
  *
  * Note that the dup'ed value is 'new', i.e. it has a refcount of 1.
  */
@@ -352,23 +172,24 @@ value_dup(struct value *v)
 			value_list_append(&n, l->value);
 		}
 		return(n);
-	case VALUE_STAB:
-		return(value_new_symbol_table(v->v.stab));
 	case VALUE_ERROR:
 		return(value_new_error(v->v.e));
 	case VALUE_BUILTIN:
-		return(value_new_builtin(v->v.f));
+		return(value_new_builtin(v->v.bi));
 	case VALUE_CLOSURE:
 		/* XXX depth?? */
-		return(value_new_closure(v->v.k->ast, v->v.k->ar));
-	case VALUE_SYMBOL:
-		return(value_new_symbol(v->v.sym));
+		return(value_new_closure(v->v.k->ast, v->v.k->ar,
+		    v->v.k->arity, v->v.k->cc));
+	case VALUE_DICT:
+		n = value_new_dict();
+		/* XXX for each key in v->v.d, insert into n */
+		return(n);
 	default:
 		return(value_new_error("unknown type"));
 	}
 }
 
-/*** SETTING FUNCTIONS ***/
+/*** CONDITIONAL DUPLICATOR ***/
 
 /*
  * If the given value has more than one reference to it,
@@ -398,31 +219,295 @@ copy_on_write(struct value **v)
 	}
 }
 
+/*** EMPTIER ***/
+
 /*
  * If the given value is a value which can contain other values,
  * such as a list, 'empty' it so that it can take on a new value.
  */
 static void
-value_empty(struct value **v)
+value_empty(struct value *v)
 {
-	switch ((*v)->type) {
+	switch (v->type) {
 	case VALUE_LIST:
-		list_free(&(*v)->v.l);
+		list_free(&v->v.l);
 		break;
 	case VALUE_STRING:
-		if ((*v)->v.s != NULL)
-			bhuna_free((*v)->v.s);
+		if (v->v.s != NULL)
+			bhuna_free(v->v.s);
 		break;
 	case VALUE_ERROR:
-		if ((*v)->v.e != NULL)
-			bhuna_free((*v)->v.e);
+		if (v->v.e != NULL)
+			bhuna_free(v->v.e);
 		break;
-	/* VALUE_STAB? */
 	case VALUE_CLOSURE:
-		closure_free((*v)->v.k);
+		closure_free(v->v.k);
+		break;
+	case VALUE_DICT:
+		dict_free(v->v.d);
 		break;
 	}
 }
+
+/*** DESTRUCTOR ***/
+
+static void
+value_free(struct value *v)
+{
+	if (v == NULL)
+		return;
+
+	assert(v->refcount == 0);
+
+#ifdef DEBUG
+	if (trace_valloc > 1) {
+		printf("[RC] freeing ");
+		value_print(v);
+		printf("\n");
+	}
+#endif
+
+	value_empty(v);
+
+#ifdef DEBUG
+	if (trace_valloc > 0) {
+		remove_value_from_global_table(v);
+		num_vars_freed++;
+	}
+#endif
+
+#ifdef POOL_VALUES
+	value_deallocate(v);
+#else
+	bhuna_free(v);
+#endif
+}
+
+/*** REFCOUNTERS ***/
+
+void
+value_grab(struct value *v)
+{
+	if (v == NULL)
+		return;
+	assert(v->refcount > 0);
+	v->refcount++;
+#ifdef DEBUG
+	if (trace_refcounting > 1) {
+		printf("[RC] grabbed ");
+		value_print(v);
+		printf(", refcount now %d\n", v->refcount);
+	}
+	num_vars_grabbed++;
+#endif
+}
+
+void
+value_release(struct value *v)
+{
+	if (v == NULL)
+		return;
+	assert(v->refcount > 0);
+	v->refcount--;
+#ifdef DEBUG
+	if (trace_refcounting > 1) {
+		printf("[RC] released ");
+		value_print(v);
+		printf(", refcount now %d\n", v->refcount);
+	}
+	num_vars_released++;
+#endif
+	if (v->refcount == 0)
+		value_free(v);
+}
+
+/*** SPECIFIC CONSTRUCTORS ***/
+
+struct value *
+value_new_integer(int i)
+{
+	struct value *v;
+
+	v = value_new(VALUE_INTEGER);
+	v->v.i = i;
+
+#ifdef DEBUG
+	if (trace_valloc > 1) {
+		printf("[RC] created ");
+		value_print(v);
+		printf("\n");
+	}
+#endif
+
+	return(v);
+}
+
+struct value *
+value_new_boolean(int b)
+{
+	struct value *v;
+
+	v = value_new(VALUE_BOOLEAN);
+	v->v.b = b;
+
+#ifdef DEBUG
+	if (trace_valloc > 1) {
+		printf("[RC] created ");
+		value_print(v);
+		printf("\n");
+	}
+#endif
+
+	return(v);
+}
+
+struct value *
+value_new_atom(int atom)
+{
+	struct value *v;
+
+	v = value_new(VALUE_ATOM);
+	v->v.atom = atom;
+
+#ifdef DEBUG
+	if (trace_valloc > 1) {
+		printf("[RC] created ");
+		value_print(v);
+		printf("\n");
+	}
+#endif
+
+	return(v);
+}
+
+struct value *
+value_new_string(char *s)
+{
+	struct value *v;
+
+	v = value_new(VALUE_STRING);
+	v->v.s = strdup(s);
+
+#ifdef DEBUG
+	if (trace_valloc > 1) {
+		printf("[RC] created ");
+		value_print(v);
+		printf("\n");
+	}
+#endif
+
+	return(v);
+}
+
+struct value *
+value_new_list(void)
+{
+	struct value *v;
+
+	v = value_new(VALUE_LIST);
+	v->v.l = NULL;
+
+#ifdef DEBUG
+	if (trace_valloc > 1) {
+		printf("[RC] created ");
+		value_print(v);
+		printf("\n");
+	}
+#endif
+
+	return(v);
+}
+
+struct value *
+value_new_error(char *error)
+{
+	struct value *v;
+
+	v = value_new(VALUE_ERROR);
+	v->v.e = strdup(error);
+
+#ifdef DEBUG
+	if (trace_valloc > 1) {
+		printf("[RC] created ");
+		value_print(v);
+		printf("\n");
+	}
+#endif
+
+	return(v);
+}
+
+struct value *
+value_new_builtin(struct builtin *bi)
+{
+	struct value *v;
+
+	v = value_new(VALUE_BUILTIN);
+	v->v.bi = bi;
+
+#ifdef DEBUG
+	if (trace_valloc > 1) {
+		printf("[RC] created ");
+		value_print(v);
+		printf("\n");
+	}
+#endif
+
+	return(v);
+}
+
+struct value *
+value_new_closure(struct ast *a, struct activation *ar, int arity, int cc)
+{
+	struct value *v;
+
+	v = value_new(VALUE_CLOSURE);
+	v->v.k = closure_new(a, ar, arity, cc);
+
+#ifdef DEBUG
+	if (trace_valloc > 1) {
+		printf("[RC] created ");
+		value_print(v);
+		printf("\n");
+	}
+#endif
+
+	return(v);
+}
+
+struct value *
+value_new_dict(void)
+{
+	struct value *v;
+
+	v = value_new(VALUE_DICT);
+	v->v.d = dict_new();
+
+#ifdef DEBUG
+	if (trace_valloc > 1) {
+		printf("[RC] created ");
+		value_print(v);
+		printf("\n");
+	}
+#endif
+
+	return(v);
+}
+
+/*** GENERIC COPIER ***/
+
+void
+value_set_from_value(struct value **v, struct value *q)
+{
+	/*
+	 * We are making another reference to q, so we must grab it
+	 */
+	value_release(*v);
+	value_grab(q);
+	*v = q;
+}
+
+/*** SPECIFIC COPIERS ***/
 
 /*
  * These `set' functions implement copy-on-write and emptying.
@@ -435,7 +520,7 @@ value_set_integer(struct value **v, int i)
 		return;
 	}
 	copy_on_write(v);
-	value_empty(v);
+	value_empty(*v);
 	(*v)->type = VALUE_INTEGER;
 	(*v)->v.i = i;
 }
@@ -448,7 +533,7 @@ value_set_boolean(struct value **v, int b)
 		return;
 	}
 	copy_on_write(v);
-	value_empty(v);
+	value_empty(*v);
 	(*v)->type = VALUE_BOOLEAN;
 	(*v)->v.b = b;
 }
@@ -461,7 +546,7 @@ value_set_atom(struct value **v, int atom)
 		return;
 	}
 	copy_on_write(v);
-	value_empty(v);
+	value_empty(*v);
 	(*v)->type = VALUE_ATOM;
 	(*v)->v.atom = atom;
 }
@@ -474,7 +559,7 @@ value_set_string(struct value **v, char *s)
 		return;
 	}
 	copy_on_write(v);
-	value_empty(v);
+	value_empty(*v);
 	(*v)->type = VALUE_STRING;
 	(*v)->v.s = strdup(s);
 }
@@ -487,10 +572,67 @@ value_set_list(struct value **v)
 		return;
 	}
 	copy_on_write(v);
-	value_empty(v);
+	value_empty(*v);
 	(*v)->type = VALUE_LIST;
 	(*v)->v.l = NULL;
 }
+
+void
+value_set_error(struct value **v, char *e)
+{
+	if (*v == NULL) {
+		*v = value_new_error(e);
+		return;
+	}
+	copy_on_write(v);
+	value_empty(*v);
+	(*v)->type = VALUE_ERROR;
+	(*v)->v.e = strdup(e);
+}
+
+void
+value_set_builtin(struct value **v, struct builtin *bi)
+{
+	if (*v == NULL) {
+		*v = value_new_builtin(bi);
+		return;
+	}
+	copy_on_write(v);
+	value_empty(*v);
+	(*v)->type = VALUE_BUILTIN;
+	(*v)->v.bi = bi;
+}
+
+void
+value_set_closure(struct value **v, struct ast *a, struct activation *ar,
+		  int arity, int cc)
+{
+	if (*v == NULL) {
+		*v = value_new_closure(a, ar, arity, cc);
+		return;
+	}
+
+	copy_on_write(v);
+	value_empty(*v);
+
+	(*v)->type = VALUE_CLOSURE;
+	(*v)->v.k = closure_new(a, ar, arity, cc);
+}
+
+void
+value_set_dict(struct value **v)
+{
+	if (*v == NULL) {
+		*v = value_new_dict();
+		return;
+	}
+	copy_on_write(v);
+	value_empty(*v);
+	(*v)->type = VALUE_DICT;
+	(*v)->v.d = dict_new();
+}
+
+/*** ACCESSORS ***/
 
 void
 value_list_append(struct value **v, struct value *q)
@@ -505,8 +647,9 @@ value_list_append(struct value **v, struct value *q)
 	}
 #endif
 
-	if (*v == NULL)
+	if (*v == NULL) {
 		*v = value_new_list();
+	}
 
 	copy_on_write(v);
 
@@ -524,166 +667,29 @@ value_list_append(struct value **v, struct value *q)
 }
 
 void
-value_set_symbol_table(struct value **v, struct symbol_table *stab)
+value_dict_store(struct value **v, struct value *k, struct value *d)
 {
-	if (*v == NULL) {
-		*v = value_new_symbol_table(stab);
-		return;
-	}
-	copy_on_write(v);
-	value_empty(v);
-	(*v)->type = VALUE_STAB;
-	(*v)->v.stab = stab;
-}
-
-void
-value_set_error(struct value **v, char *e)
-{
-	if (*v == NULL) {
-		*v = value_new_error(e);
-		return;
-	}
-	copy_on_write(v);
-	value_empty(v);
-	(*v)->type = VALUE_ERROR;
-	(*v)->v.e = strdup(e);
-}
-
-void
-value_set_builtin(struct value **v, void (*f)(struct value **))
-{
-	if (*v == NULL) {
-		*v = value_new_builtin(f);
-		return;
-	}
-	copy_on_write(v);
-	value_empty(v);
-	(*v)->type = VALUE_BUILTIN;
-	(*v)->v.f = f;
-}
-
-void
-value_set_closure(struct value **v, struct ast *a, struct activation *ar)
-{
-	if (*v == NULL) {
-		*v = value_new_closure(a, ar);
-		return;
-	}
+	if (*v == NULL)
+		*v = value_new_dict();
 
 	copy_on_write(v);
-	value_empty(v);
-
-	(*v)->type = VALUE_CLOSURE;
-	(*v)->v.k = closure_new(a, ar);
-}
-
-void
-value_set_symbol(struct value **v, struct symbol *sym)
-{
-	if (*v == NULL) {
-		*v = value_new_symbol(sym);
-		return;
-	}
-	copy_on_write(v);
-	value_empty(v);
-	(*v)->type = VALUE_SYMBOL;
-	(*v)->v.sym = sym;
-}
-
-/*-----*/
-
-void
-value_set_from_value(struct value **v, struct value *q)
-{
-	/*
-	 * We are making another reference to q, so we must grab it
-	 */
-	value_release(*v);
-	value_grab(q);
-	*v = q;
-}
-
-/*** DESTRUCTOR ***/
-
-static void
-value_free(struct value *v)
-{
-	if (v == NULL)
-		return;
-
-	assert(v->refcount == 0);
 
 #ifdef DEBUG
 	if (trace_refcounting > 1) {
-		printf("[RC] freeing ");
-		value_print(v);
+		printf("[dict] store ");
+		value_print(k);
+		printf(",");
+		value_print(d);
+		printf(" in ");
+		value_print(*v);
 		printf("\n");
 	}
 #endif
 
-	switch (v->type) {
-	case VALUE_STRING:
-		bhuna_free(v->v.s);
-		break;
-	case VALUE_LIST:
-		list_free(&v->v.l);
-		break;
-	case VALUE_STAB:
-		symbol_table_free(v->v.stab);
-		break;
-	case VALUE_ERROR:
-		bhuna_free(v->v.e);
-		break;
-	case VALUE_CLOSURE:
-		closure_free(v->v.k);
-		break;
-	}
-
-#ifdef DEBUG
-	if (trace_refcounting > 0) {
-		remove_value_from_global_table(v);
-		num_vars_freed++;
-	}
-#endif
-
-	bhuna_free(v);
+	dict_store((*v)->v.d, k, d);
 }
 
-/*** REFCOUNTERS ***/
-
-void
-value_grab(struct value *v)
-{
-	if (v == NULL)
-		return;
-	v->refcount++;
-#ifdef DEBUG
-	if (trace_refcounting > 1) {
-		printf("[RC] grabbed ");
-		value_print(v);
-		printf(", refcount now %d\n", v->refcount);
-		num_vars_grabbed++;
-	}
-#endif
-}
-
-void
-value_release(struct value *v)
-{
-	if (v == NULL)
-		return;
-	v->refcount--;
-#ifdef DEBUG
-	if (trace_refcounting > 1) {
-		printf("[RC] released ");
-		value_print(v);
-		printf(", refcount now %d\n", v->refcount);
-		num_vars_released++;
-	}
-#endif
-	if (v->refcount == 0)
-		value_free(v);
-}
+/*** OPERATIONS ***/
 
 void
 value_print(struct value *v)
@@ -692,7 +698,7 @@ value_print(struct value *v)
 		printf("(null)");
 		return;
 	}
-	printf("[0x%08lx]", (unsigned long)v);
+	printf("[0x%08lx](x%d)", (unsigned long)v, v->refcount);
 	switch (v->type) {
 	case VALUE_INTEGER:
 		printf("%d", v->v.i);
@@ -709,20 +715,17 @@ value_print(struct value *v)
 	case VALUE_LIST:
 		list_dump(v->v.l);
 		break;
-	case VALUE_STAB:
-		symbol_table_dump(v->v.stab, 1);
-		break;
 	case VALUE_ERROR:
 		printf("#ERR<%s>", v->v.e);
 		break;
 	case VALUE_BUILTIN:
-		printf("#FN<%08lx>", (unsigned long)v->v.f);
+		printf("#BIF<%08lx>", (unsigned long)v->v.bi);
 		break;
 	case VALUE_CLOSURE:
 		closure_dump(v->v.k);
 		break;
-	case VALUE_SYMBOL:
-		symbol_dump(v->v.sym, 0);
+	case VALUE_DICT:
+		dict_dump(v->v.d);
 		break;
 	}
 }
@@ -760,17 +763,14 @@ value_equal(struct value *a, struct value *b)
 			}
 		}
 		return(c);
-		break;
-	case VALUE_STAB:
-		return(a->v.stab == b->v.stab);
 	case VALUE_ERROR:
 		return(strcmp(a->v.e, b->v.e) == 0);
 	case VALUE_BUILTIN:
-		return(a->v.f == b->v.f);
+		return(a->v.bi == b->v.bi);
 	case VALUE_CLOSURE:
-		return(a->v.k->ast == b->v.k->ast);	/* XXX */
-	case VALUE_SYMBOL:
-		return(a->v.sym == b->v.sym);
+		return(a->v.k == b->v.k);
+	case VALUE_DICT:
+		return(a->v.d == b->v.d);	/* XXX !!! */
 	}
 	return(0);
 }

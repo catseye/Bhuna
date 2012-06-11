@@ -1,0 +1,6 @@
+Sub = ^ {
+  Print "hello from Sub"
+  Print EoL
+}
+
+Sub

@@ -1,0 +1,16 @@
+Sub = ^ A {
+  I = 0
+  while (I < A) {
+    if I > 30
+      Print "*"
+    else
+      Print "."
+    I = I + 1
+  }
+}
+
+Sub 40
+Sub 80
+
+
+

@@ -41,6 +41,7 @@
 #include <assert.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdio.h>
 
 #include "mem.h"
 
@@ -160,8 +161,6 @@ dict_locate(struct dict *d, struct value *key,
 
 /*** OPERATIONS ***/
 
-int			 dict_exists(struct dict *, struct value *);
-
 /*
  * Retrieve a value from a dictionary, given its key.
  */
@@ -275,4 +274,14 @@ dict_size(struct dict *d)
 	}
 
 	return(count);
+}
+
+/*** debugging ***/
+
+void
+dict_dump(struct dict *d)
+{
+#ifdef DEBUG
+	printf("dict[%08lx]", (unsigned long)d);
+#endif
 }

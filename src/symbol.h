@@ -7,9 +7,13 @@
 #ifndef __SYMBOL_H_
 #define __SYMBOL_H_
 
+struct value;
+
 struct symbol_table {
 	struct symbol_table	*parent;	/* link to scopes above us */
 	struct symbol		*head;		/* first symbol in table */
+	int			 next_index;	/* next index to be taken */
+	int			 level;		/* lexical level of the table */
 };
 
 struct symbol {
@@ -17,6 +21,12 @@ struct symbol {
 	struct symbol		*next;	/* next symbol in symbol table */
 	char			*token;	/* lexeme making up the symbol */
 	int			 kind;	/* kind of symbol */
+
+	struct builtin		*builtin;
+	int			 is_pure; /* if true, symbol represents a function which is ref.transp. */
+	struct value		*value;	/* if non-NULL, symbol is a constant with this value */
+
+	int			 index;	/* index into activation record */
 };
 
 #define SYM_KIND_ANONYMOUS	0
@@ -24,18 +34,20 @@ struct symbol {
 #define SYM_KIND_FUNCTION	2
 #define SYM_KIND_VARIABLE	3
 
-struct symbol_table	*symbol_table_new(struct symbol_table *);
+struct symbol_table	*symbol_table_new(struct symbol_table *, int);
 struct symbol_table	*symbol_table_dup(struct symbol_table *);
 void			 symbol_table_free(struct symbol_table *);
 
 struct symbol_table	*symbol_table_root(struct symbol_table *);
 
-int			 symbol_table_is_empty(struct symbol_table *);
+int			 symbol_table_size(struct symbol_table *);
 
-struct symbol		*symbol_define(struct symbol_table *, char *, int);
+struct symbol		*symbol_define(struct symbol_table *, char *, int, struct value *);
 struct symbol		*symbol_lookup(struct symbol_table *, char *, int);
 
 int			 symbol_is_global(struct symbol *);
+
+void			 symbol_set_value(struct symbol *, struct value *);
 
 void			 symbol_table_dump(struct symbol_table *, int);
 void			 symbol_dump(struct symbol *, int);

@@ -11,17 +11,24 @@ struct symbol_table;
 struct symbol;
 struct scan_st;
 struct ast;
+struct value;
 
 struct ast	*parse_program(struct scan_st *, struct symbol_table *);
 struct ast	*parse_block(struct scan_st *, struct symbol_table *,
-			     struct symbol_table **);
-struct ast	*parse_statement(struct scan_st *, struct symbol_table *);
-struct ast	*parse_assignment(struct scan_st *, struct symbol_table *);
-struct ast	*parse_command(struct scan_st *, struct symbol_table *);
-struct ast	*parse_expr(struct scan_st *, struct symbol_table *, int);
-struct ast	*parse_primitive(struct scan_st *, struct symbol_table *);
+			struct symbol_table **, int *);
+struct ast	*parse_statement(struct scan_st *, struct symbol_table *,
+			int *);
+struct ast	*parse_assignment(struct scan_st *, struct symbol_table *, int,
+			int *);
+struct ast	*parse_command(struct scan_st *, struct symbol_table *,
+			int *);
+struct ast	*parse_expr(struct scan_st *, struct symbol_table *, int,
+			int *);
+struct ast	*parse_primitive(struct scan_st *, struct symbol_table *,
+			int *);
+/*struct ast	*parse_list_elem(struct scan_st *, struct symbol_table *);*/
 struct ast	*parse_literal(struct scan_st *, struct symbol_table *);
 struct ast	*parse_var(struct scan_st *, struct symbol_table *,
-			   struct symbol **, int, int);
+			   struct symbol **, int, int, struct value *);
 
 #endif /* !__PARSE_H_ */

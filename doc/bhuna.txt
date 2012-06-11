@@ -19,11 +19,12 @@ Op<3>		::= "*" | "/" | "%".
 Primitive	::= "(" Expr<0> ")"
 		  | "!" Primitive
 		  | VarExpr
-		  | Block						[[2]]
+		  | "^" {Var [","]} Block
 		  | FunName "(" [Expr<0> {"," Expr<0>}] ")"
+		  | "[" [Expr<0> {"," Expr<0>}] "]"
 		  | Literal.
 
-Literal		::= "[" [Literal {"," Literal}] "]"
+Literal		::= 
 		  | <<symbol>>						[[3]]
 		  | <<number>>.
 
@@ -32,6 +33,5 @@ Var		::= <<symbol>>.						[[4]]
 
 Footnotes:
 
-[[2]]:  Only blocks enclosed in braces are valid here.
 [[3]]:	Must start with lowercase letter.
 [[4]]:	Must start with Uppercase letter.

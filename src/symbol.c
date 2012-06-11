@@ -36,6 +36,7 @@
  * $Id: symbol.c 54 2004-04-23 22:51:09Z catseye $
  */
 
+#include <assert.h>
 #include <ctype.h>
 #include <err.h>
 #include <stdio.h>
@@ -44,6 +45,7 @@
 
 #include "mem.h"
 #include "symbol.h"
+#include "value.h"
 
 /*** GLOBALS ***/
 
@@ -66,6 +68,10 @@ symbol_new(char *token, int kind)
 
 	sym->kind = kind;
 	sym->in = NULL;
+	sym->index = -1;
+	sym->is_pure = 0;
+	sym->value = NULL;
+	sym->builtin = NULL;
 
 	return(sym);
 }
@@ -73,20 +79,33 @@ symbol_new(char *token, int kind)
 static void
 symbol_free(struct symbol *sym)
 {
+	value_release(sym->value);
 	bhuna_free(sym->token);
 	bhuna_free(sym);
 }
 
 /*** CONSTRUCTOR/DESTRUCTOR ***/
 
+/*
+ * Offset is how many levels deeper this symbol table should be from
+ * its parent.  Generally, closures use 1, anonymous blocks (like if
+ * and while) use 0 (same level.)
+ */
 struct symbol_table *
-symbol_table_new(struct symbol_table *parent)
+symbol_table_new(struct symbol_table *parent, int offset)
 {
 	struct symbol_table *stab;
 
 	stab = bhuna_malloc(sizeof(struct symbol_table));
-	stab->parent = parent;
+
 	stab->head = NULL;
+	stab->next_index = 0;
+
+	stab->parent = parent;
+	if (parent != NULL)
+		stab->level = stab->parent->level + offset;
+	else
+		stab->level = 0;
 
 	return(stab);
 }
@@ -116,9 +135,18 @@ symbol_table_root(struct symbol_table *stab)
 }
 
 int
-symbol_table_is_empty(struct symbol_table *stab)
+symbol_table_size(struct symbol_table *stab)
 {
-	return(stab->head == NULL);
+	/*
+	struct symbol *sym;
+	int i = 0;
+
+	for (sym = stab->head; sym != NULL; sym = sym->next)
+		i++;
+	printf("stab size = %d, max index = %d\n", i, stab->next_index);
+	*/
+
+	return(stab->next_index);
 }
 
 /*** OPERATIONS ***/
@@ -129,13 +157,29 @@ symbol_table_is_empty(struct symbol_table *stab)
  * If token == NULL, a new anonymous symbol is created.
  */
 struct symbol *
-symbol_define(struct symbol_table *stab, char *token, int kind)
+symbol_define(struct symbol_table *stab, char *token, int kind, struct value *v)
 {
 	struct symbol *new_sym;
 
 	new_sym = symbol_new(token, kind);
 
 	new_sym->in = stab;
+	if (v == NULL) {
+		struct symbol_table *defining_table;
+
+		/*
+		 * Find allocation offset for the symbol's value.
+		 */
+		defining_table = stab;
+		while (defining_table->parent != NULL &&
+		    defining_table->parent->level == defining_table->level)
+			defining_table = defining_table->parent;
+		new_sym->index = defining_table->next_index++;
+		/*printf("%s->index = %d\n", new_sym->token, new_sym->index);*/
+	} else {
+		value_grab(v);
+		new_sym->value = v;
+	}
 	new_sym->next = stab->head;
 	stab->head = new_sym;
 
@@ -159,6 +203,15 @@ int
 symbol_is_global(struct symbol *sym)
 {
 	return(sym->in->parent == NULL);
+}
+
+void
+symbol_set_value(struct symbol *sym, struct value *v)
+{
+	assert(sym->value != NULL);
+	value_release(sym->value);
+	value_grab(v);
+	sym->value = v;
 }
 
 #ifdef DEBUG
@@ -195,5 +248,9 @@ symbol_dump(struct symbol *sym, int show_ast)
 	for (i = 0; i < stab_indent; i++)
 		printf(" ");
 	printf("`%s'(%08lx)", sym->token, (unsigned long)sym);
+	if (sym->value != NULL) {
+		printf("=");
+		value_print(sym->value);
+	}
 #endif
 }

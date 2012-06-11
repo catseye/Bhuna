@@ -4,20 +4,28 @@
 
 #include "ast.h"
 #include "list.h"
-#include "symbol.h"
 #include "value.h"
+#include "builtin.h"
+
+#ifdef DEBUG
+#include "symbol.h"
+#endif
 
 /***** constructors *****/
 
 struct ast *
-ast_new_sym(struct symbol *s)
+ast_new_local(int index, int upcount, void *sym)
 {
 	struct ast *a;
 
 	a = malloc(sizeof(struct ast));
-	a->type = AST_SYM;
+	a->type = AST_LOCAL;
 
-	a->u.sym.sym = s;
+	a->u.local.index = index;
+	a->u.local.upcount = upcount;
+#ifdef DEBUG
+	a->u.local.sym = sym;
+#endif
 
 	return(a);
 }
@@ -37,22 +45,22 @@ ast_new_value(struct value *v)
 }
 
 struct ast *
-ast_new_scope(struct ast *body, struct symbol_table *local)
+ast_new_builtin(struct ast *left, struct ast *right, struct builtin *bi)
 {
 	struct ast *a;
 
 	a = malloc(sizeof(struct ast));
-	a->type = AST_SCOPE;
+	a->type = AST_BUILTIN;
 
-	a->u.scope.body = body;
-
-	a->u.scope.local = local;
+	a->u.builtin.left = left;
+	a->u.builtin.right = right;
+	a->u.builtin.bi = bi;
 
 	return(a);
 }
 
 struct ast *
-ast_new_apply(struct ast *fn, struct ast *args)
+ast_new_apply(struct ast *fn, struct ast *args, int is_pure)
 {
 	struct ast *a;
 
@@ -61,6 +69,7 @@ ast_new_apply(struct ast *fn, struct ast *args)
 
 	a->u.apply.left = fn;
 	a->u.apply.right = args;
+	a->u.apply.is_pure = is_pure;
 
 	return(a);
 }
@@ -84,14 +93,12 @@ ast_new_statement(struct ast *left, struct ast *right)
 {
 	struct ast *a;
 
-	/*
 	if (left == NULL && right == NULL)
 		return(NULL);
 	if (left == NULL)
 		return(right);
 	if (right == NULL)
 		return(left);
-	*/
 
 	a = malloc(sizeof(struct ast));
 	a->type = AST_STATEMENT;
@@ -127,6 +134,7 @@ ast_new_conditional(struct ast *test, struct ast *yes, struct ast *no)
 	a->u.conditional.test = test;
 	a->u.conditional.yes = yes;
 	a->u.conditional.no = no;
+	/*a->u.conditional.index = index;*/
 
 	return(a);
 }
@@ -145,6 +153,19 @@ ast_new_while_loop(struct ast *test, struct ast *body)
 	return(a);
 }
 
+struct ast *
+ast_new_retr(struct ast *body)
+{
+	struct ast *a;
+
+	a = malloc(sizeof(struct ast));
+	a->type = AST_RETR;
+
+	a->u.retr.body = body;
+
+	return(a);
+}
+
 void
 ast_free(struct ast *a)
 {
@@ -152,13 +173,14 @@ ast_free(struct ast *a)
 		return;
 	}
 	switch (a->type) {
-	case AST_SYM:
+	case AST_LOCAL:
 		break;
 	case AST_VALUE:
 		value_release(a->u.value.value);
 		break;
-	case AST_SCOPE:
-		ast_free(a->u.scope.body);
+	case AST_BUILTIN:
+		ast_free(a->u.apply.left);
+		ast_free(a->u.apply.right);
 		break;
 	case AST_APPLY:
 		ast_free(a->u.apply.left);
@@ -185,6 +207,9 @@ ast_free(struct ast *a)
 		ast_free(a->u.while_loop.test);
 		ast_free(a->u.while_loop.body);
 		break;
+	case AST_RETR:
+		ast_free(a->u.retr.body);
+		break;
 	}
 	free(a);
 }
@@ -196,12 +221,12 @@ ast_name(struct ast *a)
 	if (a == NULL)
 		return("(null)");
 	switch (a->type) {
-	case AST_SYM:
-		return("AST_SYM");
+	case AST_LOCAL:
+		return("AST_LOCAL");
 	case AST_VALUE:
 		return("AST_VALUE");
-	case AST_SCOPE:
-		return("AST_SCOPE");
+	case AST_BUILTIN:
+		return("AST_BUILTIN");
 	case AST_APPLY:
 		return("AST_APPLY");
 	case AST_ARG:
@@ -214,6 +239,8 @@ ast_name(struct ast *a)
 		return("AST_CONDITIONAL");
 	case AST_WHILE_LOOP:
 		return("AST_WHILE_LOOP");
+	case AST_RETR:
+		return("AST_RETR");
 	}
 #endif
 	return("AST_UNKNOWN??!?");
@@ -230,21 +257,21 @@ ast_dump(struct ast *a, int indent)
 	}
 	for (i = 0; i < indent; i++) printf("  ");
 	switch (a->type) {
-	case AST_SYM:
-		printf("symbol(");
-		symbol_dump(a->u.sym.sym, 0);
-		printf(")\n");
+	case AST_LOCAL:
+		printf("local(%d,%d)=", a->u.local.index, a->u.local.upcount);
+		if (a->u.local.sym != NULL)
+			symbol_dump(a->u.local.sym, 0);
+		printf("\n");
 		break;
 	case AST_VALUE:
 		printf("value(");
 		value_print(a->u.value.value);
 		printf(")\n");
 		break;
-	case AST_SCOPE:
-		printf("scope {\n");
-		symbol_table_dump(a->u.scope.local, 0);
-		/*symbol_table_dump(a->u.scope.trap, 0);*/
-		ast_dump(a->u.scope.body, indent + 1);
+	case AST_BUILTIN:
+		printf("builtin `%s`{\n", a->u.builtin.bi->name);
+		ast_dump(a->u.builtin.left, indent + 1);
+		ast_dump(a->u.builtin.right, indent + 1);
 		for (i = 0; i < indent; i++) printf("  "); printf("}\n");
 		break;
 	case AST_APPLY:
@@ -272,7 +299,7 @@ ast_dump(struct ast *a, int indent)
 		for (i = 0; i < indent; i++) printf("  "); printf("}\n");
 		break;
 	case AST_CONDITIONAL:
-		printf("conditional {\n");
+		printf("conditional {\n"); /* a->u.conditional.index); */
 		ast_dump(a->u.conditional.test, indent + 1);
 		ast_dump(a->u.conditional.yes, indent + 1);
 		if (a->u.conditional.no != NULL)
@@ -283,7 +310,57 @@ ast_dump(struct ast *a, int indent)
 		printf("while {\n");
 		ast_dump(a->u.while_loop.test, indent + 1);
 		ast_dump(a->u.while_loop.body, indent + 1);
+		for (i = 0; i < indent; i++) printf("  "); printf("}\n");
+		break;
+	case AST_RETR:
+		printf("retr {\n");
+		ast_dump(a->u.retr.body, indent + 1);
+		for (i = 0; i < indent; i++) printf("  "); printf("}\n");
 		break;
 	}
 #endif
+}
+
+int
+ast_is_constant(struct ast *a)
+{
+	if (a == NULL) {
+		return(1);
+	}
+	switch (a->type) {
+	case AST_LOCAL:
+		return(0);
+	case AST_VALUE:
+		return(1);
+	case AST_BUILTIN:
+		return(a->u.builtin.bi->purity &&
+		       ast_is_constant(a->u.builtin.left) &&
+		       ast_is_constant(a->u.builtin.right));
+	case AST_APPLY:
+		return(a->u.apply.is_pure &&
+		       ast_is_constant(a->u.apply.left) &&
+		       ast_is_constant(a->u.apply.right));
+	case AST_ARG:
+		return(ast_is_constant(a->u.arg.left) &&
+		       ast_is_constant(a->u.arg.right));
+	case AST_STATEMENT:
+		return(ast_is_constant(a->u.statement.left) &&
+		       ast_is_constant(a->u.statement.right));
+	case AST_ASSIGNMENT:
+		return(0);
+		/*
+		return(ast_is_constant(a->u.assignment.left) &&
+		       ast_is_constant(a->u.assignment.right));
+		*/
+	case AST_CONDITIONAL:
+		return(ast_is_constant(a->u.conditional.test) &&
+		       ast_is_constant(a->u.conditional.yes) &&
+		       ast_is_constant(a->u.conditional.no));
+	case AST_WHILE_LOOP:
+		return(ast_is_constant(a->u.while_loop.test) &&
+		       ast_is_constant(a->u.while_loop.body));
+	case AST_RETR:
+		return(ast_is_constant(a->u.retr.body));
+	}
+	return(0);
 }

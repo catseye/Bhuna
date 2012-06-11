@@ -56,21 +56,31 @@
 #define VAR_MAY_EXIST		1
 #define VAR_MUST_NOT_EXIST	2
 
-/* util */
+/*  --- util --- */
 
-struct ast *
-ast_new_empty_list(struct symbol_table *stab)
+/*
+ * Convenience function to create AST for a named function call on 2 arguments.
+ */
+static struct ast *
+ast_new_nfcall(char *name, struct symbol_table *stab, struct ast *a, struct ast *b)
 {
-	struct value *v;
-	struct ast *a;
+	struct symbol *sym;
+	/*struct ast *l, *r = NULL;*/
 
+	sym = symbol_lookup(stab, name, VAR_GLOBAL);
+	assert(sym->builtin != NULL);
+	a = ast_new_builtin(a, b, sym->builtin);
 	/*
-	 * Optimization: make this one symbol once,
-	 * share it as a global value...
-	 */
-	v = value_new_list();
-	a = ast_new_value(v);
-	value_release(v);
+	} else if (sym->value != NULL) {
+		r = ast_new_arg(a, b);
+		l = ast_new_value(sym->value);
+		a = ast_new_apply(l, r, sym->is_pure);
+	} else {
+		r = ast_new_arg(a, b);
+		l = ast_new_local(sym->index, stab->level - sym->in->level, sym);
+		a = ast_new_apply(l, r, sym->is_pure);
+	}
+	*/
 	return(a);
 }
 
@@ -80,9 +90,11 @@ struct ast *
 parse_program(struct scan_st *sc, struct symbol_table *stab)
 {
 	struct ast *a = NULL;
+	int cc;
 
 	while (sc->type != TOKEN_EOF) {
-		a = ast_new_statement(a, parse_statement(sc, stab));
+		cc = 0;
+		a = ast_new_statement(a, parse_statement(sc, stab, &cc));
 	}
 
 	return(a);
@@ -94,7 +106,7 @@ parse_program(struct scan_st *sc, struct symbol_table *stab)
  */
 struct ast *
 parse_block(struct scan_st *sc, struct symbol_table *stab,
-	    struct symbol_table **istab)
+	    struct symbol_table **istab, int *cc)
 {
 	struct ast *a = NULL;
 /*	struct value *v;
@@ -105,11 +117,11 @@ parse_block(struct scan_st *sc, struct symbol_table *stab,
 	if (tokeq(sc, "{")) {
 		scan_expect(sc, "{");
 		while (tokne(sc, "}") && sc->type != TOKEN_EOF) {
-			a = ast_new_statement(a, parse_statement(sc, *istab));
+			a = ast_new_statement(a, parse_statement(sc, *istab, cc));
 		}
 		scan_expect(sc, "}");
 	} else {
-		a = parse_statement(sc, *istab);
+		a = parse_statement(sc, *istab, cc);
 	}
 
 	/*
@@ -129,45 +141,69 @@ parse_block(struct scan_st *sc, struct symbol_table *stab,
 }
 
 struct ast *
-parse_statement(struct scan_st *sc, struct symbol_table *stab)
+parse_statement(struct scan_st *sc, struct symbol_table *stab, int *cc)
 {
 	struct symbol_table *istab;
+	/*struct symbol *sym;*/
 	struct ast *a, *l, *r;
 
 	if (tokeq(sc, "{")) {
-		istab = symbol_table_new(stab);
-		a = parse_block(sc, stab, &istab);
+		istab = symbol_table_new(stab, 0);
+		a = parse_block(sc, stab, &istab, cc);
 	} else if (tokeq(sc, "if")) {
 		scan(sc);
-		a = parse_expr(sc, stab, 0);
-		istab = symbol_table_new(stab);
-		l = parse_block(sc, stab, &istab);
+		/*
+		 * Create a temporary value for this test.
+		 */
+		/*
+		sym = symbol_define(stab, NULL, SYM_KIND_ANONYMOUS, NULL);
+		*/
+		a = parse_expr(sc, stab, 0, cc);
+		istab = symbol_table_new(stab, 0);
+		l = parse_block(sc, stab, &istab, cc);
 		if (tokeq(sc, "else")) {
 			scan(sc);
-			istab = symbol_table_new(stab);
-			r = parse_block(sc, stab, &istab);
+			istab = symbol_table_new(stab, 0);
+			r = parse_block(sc, stab, &istab, cc);
 		} else {
 			r = NULL;
 		}
+		/*
+		a = ast_new_conditional(a, l, r, sym->index);
+		*/
 		a = ast_new_conditional(a, l, r);
 	} else if (tokeq(sc, "while")) {
 		scan(sc);
-		l = parse_expr(sc, stab, 0);
-		istab = symbol_table_new(stab);
-		r = parse_block(sc, stab, &istab);
+		l = parse_expr(sc, stab, 0, cc);
+		istab = symbol_table_new(stab, 0);
+		r = parse_block(sc, stab, &istab, cc);
 		a = ast_new_while_loop(l, r);
-	} else if (tokeq(sc, "local")) {
+	} else if (tokeq(sc, "return")) {
 		scan(sc);
-		a = parse_assignment(sc, stab);
+		a = parse_expr(sc, stab, 0, cc);
+		a = ast_new_retr(a);
 	} else {
-		if (symbol_lookup(stab, sc->token, VAR_GLOBAL) == NULL) {
+		int is_const = 0;
+		int is_assign = 0;
+
+		while (tokeq(sc, "local") || tokeq(sc, "const")) {
+			is_assign = 1;
+			if (tokeq(sc, "local")) {
+				scan(sc);
+				/* Not much, mere presence works. */
+			} else if (tokeq(sc, "const")) {
+				scan(sc);
+				is_const = 1;
+			}
+		}
+		if (is_assign || symbol_lookup(stab, sc->token, VAR_GLOBAL) == NULL) {
 			/*
 			 * Symbol doesn't exist at all - it MUST be
 			 * an assignment, and it MUST be local.
 			 */
-			a = parse_assignment(sc, stab);
+			a = parse_assignment(sc, stab, is_const, cc);
 		} else {
-			a = parse_command(sc, stab);
+			a = parse_command(sc, stab, cc);
 		}
 	}
 	if (tokeq(sc, ";"))
@@ -176,45 +212,94 @@ parse_statement(struct scan_st *sc, struct symbol_table *stab)
 }
 
 struct ast *
-parse_assignment(struct scan_st *sc, struct symbol_table *stab)
+parse_assignment(struct scan_st *sc, struct symbol_table *stab, int is_const,
+		 int *cc)
 {
 	struct symbol *sym;
 	struct ast *l, *r;
+	struct value *v = NULL;
 
-	l = parse_var(sc, stab, &sym, VAR_LOCAL, VAR_MUST_NOT_EXIST);
+	if (is_const) {
+		/*
+		 * This is just a placeholder.
+		 */
+		v = value_new_integer(42);
+	}
+	l = parse_var(sc, stab, &sym, VAR_LOCAL, VAR_MUST_NOT_EXIST, v);
+	value_release(v);
 	scan_expect(sc, "=");
-	r = parse_expr(sc, stab, 0);
-	return(ast_new_assignment(l, r));
+	r = parse_expr(sc, stab, 0, cc);
+	if (is_const) {
+		if (!ast_is_constant(r)) {
+			scan_error(sc, "Expression must be constant");
+		} else {
+			/* XXX CONSTANT FOLDING PLEASE */
+			/*
+			ast_eval(r, &v);
+			printf("Constant value = ");
+			value_print(v);
+			printf("\n");
+			symbol_set_value(sym, v);
+		
+			ast_free(l);
+			ast_free(r);
+			*/
+		}
+		return(NULL);
+	} else {
+		return(ast_new_assignment(l, r));
+	}
 }
 
 struct ast *
-parse_command(struct scan_st *sc, struct symbol_table *stab)
+parse_command(struct scan_st *sc, struct symbol_table *stab,
+	      int *cc)
 {
 	struct symbol *sym;
-	struct ast *a, *l, *r;
+	struct ast *a, *l, *r, *z;
 
-	a = parse_var(sc, stab, &sym, VAR_GLOBAL, VAR_MUST_EXIST);
+	a = parse_var(sc, stab, &sym, VAR_GLOBAL, VAR_MUST_EXIST, NULL);
 	if (tokeq(sc, "=")) {
 		/*
 		 * Actually... it's an assignment to an already-existing variable.
 		 */
-		scan(sc);
-		r = parse_expr(sc, stab, 0);
-		a = ast_new_assignment(a, r);
+		if (sym->value != NULL) {
+			scan_error(sc, "Value not modifiable");
+		} else {
+			scan(sc);
+			r = parse_expr(sc, stab, 0, cc);
+			a = ast_new_assignment(a, r);
+		}
 		return(a);
 	}
 
-	if (tokne(sc, "}") && tokne(sc, ";") && sc->type != TOKEN_EOF) {
-		l = parse_expr(sc, stab, 0);
-		while (tokeq(sc, ",")) {
-			scan_expect(sc, ",");
-			r = parse_expr(sc, stab, 0);
-			l = ast_new_arg(l, r);
+	if (sym->builtin != NULL) {
+		l = NULL; r = NULL;
+		if (tokne(sc, "}") && tokne(sc, ";") && sc->type != TOKEN_EOF) {
+			l = parse_expr(sc, stab, 0, cc);
+			if (tokeq(sc, ",")) {
+				scan_expect(sc, ",");
+				r = parse_expr(sc, stab, 0, cc);
+			}
 		}
+		a = ast_new_builtin(l, r, sym->builtin);
 	} else {
-		l = ast_new_empty_list(stab);
+		if (tokne(sc, "}") && tokne(sc, ";") && sc->type != TOKEN_EOF) {
+			l = parse_expr(sc, stab, 0, cc);
+			l = ast_new_arg(l, NULL);
+			z = l;
+			while (tokeq(sc, ",")) {
+				scan_expect(sc, ",");
+				r = parse_expr(sc, stab, 0, cc);
+				r = ast_new_arg(r, NULL);
+				z->u.arg.right = r;
+				z = r;
+			}
+		} else {
+			l = NULL;
+		}
+		a = ast_new_apply(a, l, 0);
 	}
-	a = ast_new_apply(a, l);
 
 	return(a);
 }
@@ -231,18 +316,18 @@ char *op[4][6] = {
 };
 
 struct ast *
-parse_expr(struct scan_st *sc, struct symbol_table *stab, int level)
+parse_expr(struct scan_st *sc, struct symbol_table *stab, int level,
+	   int *cc)
 {
 	struct ast *l, *r;
-	struct symbol *sym;
 	int done = 0, i = 0;
 	char the_op[256];
 
 	if (level > maxlevel) {
-		l = parse_primitive(sc, stab);
+		l = parse_primitive(sc, stab, cc);
 		return(l);
 	} else {
-		l = parse_expr(sc, stab, level + 1);
+		l = parse_expr(sc, stab, level + 1, cc);
 		while (!done) {
 			done = 1;
 			for (i = 0; i < 6 && op[level][i][0] != '\0'; i++) {
@@ -250,10 +335,8 @@ parse_expr(struct scan_st *sc, struct symbol_table *stab, int level)
 					strlcpy(the_op, sc->token, 256);
 					scan(sc);
 					done = 0;
-					r = parse_expr(sc, stab, level + 1);
-					r = ast_new_arg(l, r);
-					sym = symbol_lookup(stab, the_op, 1);
-					l = ast_new_apply(ast_new_sym(sym), r);
+					r = parse_expr(sc, stab, level + 1, cc);
+					l = ast_new_nfcall(the_op, stab, l, r);
 					break;
 				}
 			}
@@ -263,60 +346,90 @@ parse_expr(struct scan_st *sc, struct symbol_table *stab, int level)
 }
 
 struct ast *
-parse_primitive(struct scan_st *sc, struct symbol_table *stab)
+parse_primitive(struct scan_st *sc, struct symbol_table *stab, int *cc)
 {
-	struct ast *a, *l, *r;
+	struct ast *a, *l, *r, *z;
 	struct value *v;
 	struct symbol *sym;
 	struct symbol_table *istab;
 
 	if (tokeq(sc, "(")) {
 		scan(sc);
-		a = parse_expr(sc, stab, 0);
+		a = parse_expr(sc, stab, 0, cc);
 		scan_expect(sc, ")");
-	} else if (tokeq(sc, "{")) {
-		istab = symbol_table_new(stab);
-		sym = symbol_define(istab, "Arg", SYM_KIND_VARIABLE);
-		a = parse_block(sc, stab, &istab);
-		a = ast_new_scope(a, istab);
-		v = value_new_closure(a, NULL);
+	} else if (tokeq(sc, "^")) {
+		int my_cc = 0;
+
+		/*
+		 * Enclosing block contains a closure:
+		 */
+		(*cc)++;
+		scan(sc);
+		istab = symbol_table_new(stab, 1);
+		while (tokne(sc, "{") && sc->type != TOKEN_EOF) {
+			a = parse_var(sc, istab, &sym,
+			    VAR_LOCAL, VAR_MUST_NOT_EXIST, NULL);
+			ast_free(a);
+			if (tokeq(sc, ","))
+				scan(sc);
+		}
+		a = parse_block(sc, stab, &istab, &my_cc);
+		v = value_new_closure(a, NULL, symbol_table_size(istab), my_cc);
 		a = ast_new_value(v);
 		value_release(v);
 	} else if (tokeq(sc, "!")) {
 		scan(sc);
-		a = parse_primitive(sc, stab);
+		a = parse_primitive(sc, stab, cc);
 		sym = symbol_lookup(stab, "!", 1);
-		a = ast_new_apply(ast_new_sym(sym), a);
+		a = ast_new_apply(ast_new_local(
+		    sym->index,
+		    stab->level - sym->in->level,
+		    sym), a, 1);
+	} else if (tokeq(sc, "[")) {
+		scan(sc);
+		v = value_new_list();
+		a = ast_new_value(v);
+		value_release(v);
+		if (tokne(sc, "]")) {
+			r = parse_expr(sc, stab, 0, cc);
+			a = ast_new_nfcall("Cons", stab, a, r);
+			while (tokeq(sc, ",")) {
+				scan(sc);
+				r = parse_expr(sc, stab, 0, cc);
+				a = ast_new_nfcall("Cons", stab, a, r);
+			}
+		}
+		scan_expect(sc, "]");
 	} else if (sc->type == TOKEN_BAREWORD && isupper(sc->token[0])) {
-		a = parse_var(sc, stab, &sym, VAR_GLOBAL, VAR_MUST_EXIST);
+		a = parse_var(sc, stab, &sym, VAR_GLOBAL, VAR_MUST_EXIST, NULL);
 		while (tokeq(sc, "(") || tokeq(sc, "[") || tokeq(sc, ".")) {
 			if (tokeq(sc, "(")) {
 				scan(sc);
 				if (tokne(sc, ")")) {
-					l = parse_expr(sc, stab, 0);
+					l = parse_expr(sc, stab, 0, cc);
+					l = ast_new_arg(l, NULL);
+					z = l;
 					while (tokeq(sc, ",")) {
 						scan(sc);
-						r = parse_expr(sc, stab, 0);
-						l = ast_new_arg(l, r);
+						r = parse_expr(sc, stab, 0, cc);
+						r = ast_new_arg(r, NULL);
+						z->u.arg.right = r;
+						z = r;
 					}
 				} else {
-					l = ast_new_empty_list(stab);
+					l = NULL;
 				}
 				scan_expect(sc, ")");
-				a = ast_new_apply(a, l);
+				a = ast_new_apply(a, l, sym->is_pure);
 			} else if (tokeq(sc, "[")) {
 				scan(sc);
-				r = parse_expr(sc, stab, 0);
+				r = parse_expr(sc, stab, 0, cc);
 				scan_expect(sc, "]");
-				a = ast_new_arg(a, r);
-				sym = symbol_lookup(stab, "Index", VAR_GLOBAL);
-				a = ast_new_apply(ast_new_sym(sym), a);
+				a = ast_new_nfcall("Index", stab, a, r);
 			} else if (tokeq(sc, ".")) {
 				scan(sc);
 				r = parse_literal(sc, stab);
-				a = ast_new_arg(a, r);
-				sym = symbol_lookup(stab, "Index", VAR_GLOBAL);
-				a = ast_new_apply(ast_new_sym(sym), a);
+				a = ast_new_nfcall("Index", stab, a, r);
 			}
 		}
 	} else {
@@ -325,31 +438,14 @@ parse_primitive(struct scan_st *sc, struct symbol_table *stab)
 
 	return(a);
 }
-	
+
 struct ast *
 parse_literal(struct scan_st *sc, struct symbol_table *stab)
 {
 	struct ast *a;
 	struct value *v;
 
-	if (tokeq(sc, "[")) {
-		scan(sc);
-		v = value_new_list();
-		if (tokne(sc, "]")) {
-			a = parse_literal(sc, stab);
-			value_list_append(&v, a->u.value.value);
-			value_release(a->u.value.value);
-			while (tokeq(sc, ",")) {
-				scan(sc);
-				a = parse_literal(sc, stab);
-				value_list_append(&v, a->u.value.value);
-				value_release(a->u.value.value);
-			}
-		}
-		scan_expect(sc, "]");
-		a = ast_new_value(v);
-		value_release(v);
-	} else if (sc->type == TOKEN_BAREWORD && islower(sc->token[0])) {
+	if (sc->type == TOKEN_BAREWORD && islower(sc->token[0])) {
 		v = value_new_atom(atom_resolve(sc->token));
 		a = ast_new_value(v);
 		value_release(v);
@@ -376,7 +472,8 @@ parse_literal(struct scan_st *sc, struct symbol_table *stab)
 struct ast *
 parse_var(struct scan_st *sc, struct symbol_table *stab,
 	  struct symbol **sym,
-	   int globality, int existence)
+	   int globality, int existence,
+	   struct value *v)
 {
 	struct ast *a;
 
@@ -385,7 +482,7 @@ parse_var(struct scan_st *sc, struct symbol_table *stab,
 		if (existence == VAR_MUST_EXIST) {
 			scan_error(sc, "Undefined symbol");
 		}
-		*sym = symbol_define(stab, sc->token, SYM_KIND_VARIABLE);
+		*sym = symbol_define(stab, sc->token, SYM_KIND_VARIABLE, v);
 	} else {
 		if (existence == VAR_MUST_NOT_EXIST) {
 			scan_error(sc, "Symbol already defined");
@@ -393,6 +490,10 @@ parse_var(struct scan_st *sc, struct symbol_table *stab,
 	}
 	scan(sc);
 
-	a = ast_new_sym(*sym);
+	if ((*sym)->value != NULL) {
+		a = ast_new_value((*sym)->value);
+	} else {
+		a = ast_new_local((*sym)->index, stab->level - (*sym)->in->level, (*sym));
+	}
 	return(a);
 }

@@ -1,5 +1,6 @@
 #include <assert.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <unistd.h>
 
 #include "scan.h"
@@ -9,14 +10,22 @@
 #include "builtin.h"
 #include "value.h"
 #include "activation.h"
+#include "vm.h"
+
+#ifdef POOL_VALUES
+#include "pool.h"
+#endif
 
 #ifdef DEBUG
 int trace_ast = 0;
 int trace_activations = 0;
 int trace_calls = 0;
 int trace_assignments = 0;
+int trace_valloc = 0;
 int trace_refcounting = 0;
 int trace_closures = 0;
+int trace_vm = 0;
+int trace_gen = 0;
 
 int num_vars_created = 0;
 int num_vars_grabbed = 0;
@@ -24,64 +33,80 @@ int num_vars_released = 0;
 int num_vars_freed = 0;
 int num_vars_cowed = 0;
 int debug_frame = 0;
+
+int activations_allocated = 0;
+int activations_freed = 0;
+#endif
+
+#ifdef DEBUG
+#define OPTS "acfg:klmnoprstvxz"
+#define RUN_PROGRAM run_program
+#else
+#define OPTS "g:x"
+#define RUN_PROGRAM 1
 #endif
 
 struct activation *global_ar;
 struct activation *current_ar;
+int gc_trigger = DEFAULT_GC_TRIGGER;
+int gc_target;
 
 void
 usage(char **argv)
 {
-	fprintf(stderr, "Usage: %s "
-#ifdef DEBUG
-	    "[-acfknprstvz] "
-#endif
-	    "source\n",
+	fprintf(stderr, "Usage: %s [-" OPTS "] source\n",
 	    argv[0]);
 #ifdef DEBUG
 	fprintf(stderr, "  -a: trace assignments\n");
 	fprintf(stderr, "  -c: trace calls\n");
 	fprintf(stderr, "  -f: trace frames\n");
+#endif
+	fprintf(stderr, "  -g int: set garbage collection threshold\n");
+#ifdef DEBUG
 	fprintf(stderr, "  -k: trace closures\n");
+	fprintf(stderr, "  -l: trace bytecode generation (implies -x)\n");
+	fprintf(stderr, "  -m: trace virtual machine\n");
 	fprintf(stderr, "  -n: don't actually run program\n");
+	fprintf(stderr, "  -o: trace allocations\n");
 	fprintf(stderr, "  -p: dump program AST before run\n");
 	fprintf(stderr, "  -r: show reference counting stats (-rr = trace refcounting)\n");
 	fprintf(stderr, "  -s: dump symbol table before run\n");
 	fprintf(stderr, "  -t: trace AST transitions in evaluator\n");
 	fprintf(stderr, "  -v: trace activation records\n");
+#endif
+	fprintf(stderr, "  -x: execute bytecode (unless -n)\n");
+#ifdef DEBUG
 	fprintf(stderr, "  -z: dump symbol table after run\n");
 #endif
 	exit(1);
 }
 
 void
-load_builtins(struct symbol_table *stab, struct builtin_desc *b)
+load_builtins(struct symbol_table *stab, struct builtin *b)
 {
 	int i;
 	struct value *v;
 	struct symbol *sym;
 
 	for (i = 0; b[i].name != NULL; i++) {
-		sym = symbol_define(stab, b[i].name, SYM_KIND_COMMAND);
-		v = value_new_builtin(b[i].fn);
-		activation_set_value(global_ar, sym, v);
+		v = value_new_builtin(&b[i]);
+		sym = symbol_define(stab, b[i].name, SYM_KIND_COMMAND, v);
+		sym->is_pure = b[i].purity;
+		sym->builtin = &b[i];
 		value_release(v);
 	}
 	
 	/* XXX */
-	sym = symbol_define(stab, "EoL", SYM_KIND_VARIABLE);
 	v = value_new_string("\n");
-	activation_set_value(global_ar, sym, v);
+	sym = symbol_define(stab, "EoL", SYM_KIND_VARIABLE, v);
 	value_release(v);
 
-	sym = symbol_define(stab, "True", SYM_KIND_VARIABLE);
 	v = value_new_boolean(1);
-	activation_set_value(global_ar, sym, v);
+	sym = symbol_define(stab, "True", SYM_KIND_VARIABLE, v);
 	value_release(v);
 
-	sym = symbol_define(stab, "False", SYM_KIND_VARIABLE);
 	v = value_new_boolean(0);
-	activation_set_value(global_ar, sym, v);
+	sym = symbol_define(stab, "False", SYM_KIND_VARIABLE, v);
 	value_release(v);
 }
 
@@ -95,20 +120,24 @@ main(int argc, char **argv)
 	struct value *v;
 	char *source = NULL;
 	int opt;
+	int use_vm = 0;
 #ifdef DEBUG
 	int run_program = 1;
 	int dump_symbols_beforehand = 0;
 	int dump_symbols_afterwards = 0;
 	int dump_program = 0;
-#define OPTS "acfknprstvz"
-#define RUN_PROGRAM run_program
-#else
-#define OPTS ""
-#define RUN_PROGRAM 1
 #endif
 
 #ifdef DEBUG
 	setvbuf(stdout, NULL, _IOLBF, 0);
+	/*
+	printf("sizeof(value) = %d\n", sizeof(struct value));
+	printf("sizeof(fat_value) = %d\n", sizeof(struct fat_value));
+	*/
+#endif
+
+#ifdef POOL_VALUES
+	value_pool_new();
 #endif
 
 	/*
@@ -126,11 +155,26 @@ main(int argc, char **argv)
 		case 'f':
 			debug_frame++;
 			break;
+#endif
+		case 'g':
+			gc_trigger = atoi(optarg);
+			break;
+#ifdef DEBUG
 		case 'k':
 			trace_closures++;
 			break;
+		case 'l':
+			trace_gen++;
+			use_vm = 1;
+			break;
+		case 'm':
+			trace_vm++;
+			break;
 		case 'n':
 			run_program = 0;
+			break;
+		case 'o':
+			trace_valloc++;
 			break;
 		case 'p':
 			dump_program = 1;
@@ -147,6 +191,11 @@ main(int argc, char **argv)
 		case 'v':
 			trace_activations++;
 			break;
+#endif
+		case 'x':
+			use_vm = 1;
+			break;
+#ifdef DEBUG
 		case 'z':
 			dump_symbols_afterwards = 1;
 			break;
@@ -163,13 +212,16 @@ main(int argc, char **argv)
 		source = *argv;
 	else
 		usage(real_argv);
-	
+
+	gc_target = gc_trigger;
 	if ((sc = scan_open(source)) != NULL) {
-		stab = symbol_table_new(NULL);
-		global_ar = activation_new(stab, NULL);
+		stab = symbol_table_new(NULL, 0);
+		global_ar = activation_new(100, NULL, NULL);
+		activation_register(global_ar);
 		load_builtins(stab, builtins);
 		a = parse_program(sc, stab);
 		scan_close(sc);
+		current_ar = global_ar;
 #ifdef DEBUG
 		if (dump_symbols_beforehand)
 			symbol_table_dump(stab, 1);
@@ -177,19 +229,33 @@ main(int argc, char **argv)
 			ast_dump(a, 0);
 		}
 #endif
-		if (sc->errors == 0 && RUN_PROGRAM) {
+#ifndef DEBUG
+		symbol_table_free(stab);
+#endif
+		if (sc->errors == 0 && use_vm) {
+			unsigned char *program;
+
+			program = ast_gen(a);
+			if (RUN_PROGRAM) {
+				vm_run(program);
+			}
+#ifdef RECURSIVE_AST_EVALUATOR
+		} else if (sc->errors == 0 && RUN_PROGRAM) {
 			v = value_new_integer(76);
-			current_ar = global_ar;
+			ast_eval_init();
 			ast_eval(a, &v);
 			value_release(v);
+#endif
 		}
 #ifdef DEBUG
 		if (dump_symbols_afterwards)
 			symbol_table_dump(stab, 1);
 #endif
 		ast_free(a);
-		symbol_table_free(stab);
+		activation_gc();
+		activation_free(global_ar);
 #ifdef DEBUG
+		symbol_table_free(stab);
 		if (trace_refcounting > 0) {
 			value_dump_global_table();
 			printf("Created:  %8d\n", num_vars_created);
@@ -197,6 +263,10 @@ main(int argc, char **argv)
 			printf("Released: %8d\n", num_vars_released);
 			printf("Freed:    %8d\n", num_vars_freed);
 			printf("CoW'ed:   %8d\n", num_vars_cowed);
+		}
+		if (trace_activations > 0) {
+			printf("AR's alloc'ed:  %8d\n", activations_allocated);
+			printf("AR's freed:     %8d\n", activations_freed);
 		}
 #endif
 		return(0);

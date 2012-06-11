@@ -1,0 +1,11 @@
+Fact = ^ X {
+  if X > 1 {
+    T = X - 1
+    H = Fact(T)
+    return X * H
+  }
+  else
+    return 1
+}
+
+Print Fact(6)

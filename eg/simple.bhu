@@ -1,4 +1,6 @@
-B = 100
+B = 100 * 8
 Print B
-B = B * 5
-Print B
+if (B = 800) {
+  B = B * 5
+  Print B
+}

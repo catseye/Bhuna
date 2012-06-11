@@ -1,5 +1,5 @@
-F = {
+F = ^ {
   Q = 17
-  Return { Return Q }
+  return ^ { return Q }
 }
 Print F()()
