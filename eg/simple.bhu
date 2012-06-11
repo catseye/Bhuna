@@ -1,0 +1,4 @@
+B = 100
+Print B
+B = B * 5
+Print B

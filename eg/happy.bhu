@@ -1,0 +1,10 @@
+F = 19
+
+Foo = {
+ local F = 23
+ print F
+}
+
+Print F
+Foo;
+Print F

@@ -1,0 +1,10 @@
+F = {
+  Q = 17
+  Return { Print Q }
+}
+
+while True {
+  G = F()
+  G;
+}
+

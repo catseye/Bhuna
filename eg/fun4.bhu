@@ -1,0 +1,21 @@
+F = {
+  Level = Index(Arg, 1)
+  Print "Level is ", Level, EoL
+  Q = {
+    QLev = Index(Arg, 1)
+    Print "QLev is ", QLev, EoL
+    Print "(And Q thinks Level is ", Level, ")", EoL
+    if (QLev < 3)
+      Q QLev + 1
+    else
+      Print "This is as far as we go.", EoL
+  }
+  if Level < 3 {
+    F Level + 1
+  } else {
+    Print "At level three, woo!", EoL
+    Q(0)
+  }
+}
+
+F(0)

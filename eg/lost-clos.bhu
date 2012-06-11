@@ -1,0 +1,13 @@
+
+F = {
+  Print "hello!"
+}
+
+G = {
+  Print "naff!"
+}
+
+H = G		// does not dup the AST...
+G = F		// lost one ref to the AST...
+F = G		// my fears were unfounded
+

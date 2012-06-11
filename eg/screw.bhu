@@ -1,0 +1,8 @@
+local F = 100
+while F > 20 {
+  local F = 10
+  print F
+  // global f = 3
+}
+print F
+

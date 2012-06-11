@@ -1,0 +1,9 @@
+G = {
+  Q = "hello"
+  F = {
+    Print Q
+  }
+  F
+}
+
+G

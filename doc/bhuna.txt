@@ -1,0 +1,37 @@
+Program		::= {Statement}.
+Block		::= Statement | "{" {Statement} "}".
+Statement	::= (Control | Command | Assignment | Block) [";"].
+
+Control		::= "if" Expr<0> Block ["else" Block]
+		  | "while" Expr<0> Block.
+
+Command		::= VarExpr Expr<0> {"," Expr<0>}
+Assignment	::= ["local"] VarExpr "=" Expr<0>.
+
+Expr<N>		::= Expr<N+1> {Op<N> Expr<N+1>}.
+Expr<4>		::= Primitive.
+
+Op<0>		::= "&" | "|".
+Op<1>		::= ">" | "<" | ">=" | "<=" | "=" | "!=".
+Op<2>		::= "+" | "-".
+Op<3>		::= "*" | "/" | "%".
+
+Primitive	::= "(" Expr<0> ")"
+		  | "!" Primitive
+		  | VarExpr
+		  | Block						[[2]]
+		  | FunName "(" [Expr<0> {"," Expr<0>}] ")"
+		  | Literal.
+
+Literal		::= "[" [Literal {"," Literal}] "]"
+		  | <<symbol>>						[[3]]
+		  | <<number>>.
+
+VarExpr		::= Var {"[" Expr<0> "]"}.
+Var		::= <<symbol>>.						[[4]]
+
+Footnotes:
+
+[[2]]:  Only blocks enclosed in braces are valid here.
+[[3]]:	Must start with lowercase letter.
+[[4]]:	Must start with Uppercase letter.

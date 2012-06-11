@@ -1,0 +1,9 @@
+Bottles = 99
+if Bottles > 0 {
+  print Bottles, " bottles of beer on the wall,", EoL,
+        Bottles, " bottles of beer,", EoL,
+        "Take one down, pass it around,", EoL,
+        Bottles - 1, " bottles of beer on the wall.", EoL, EoL
+  Bottles = Bottles - 1
+}
+

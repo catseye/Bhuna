@@ -1,0 +1,9 @@
+F = {
+  T = 123
+  Return { Return 17 }
+}
+
+Print F, EoL
+Print F(), EoL
+Print F()(), EoL
+Print F()()(), EoL

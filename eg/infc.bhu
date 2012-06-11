@@ -1,0 +1,15 @@
+Song = {
+  Bottles = 99
+
+  Sing = {
+    Print Bottles, " bottles of beer on the wall,", EoL,
+          Bottles, " bottles of beer,", EoL,
+          "Take none down, pass none around,", EoL,
+          Bottles, " bottles of beer on the wall.", EoL, EoL
+  }
+
+  while True Sing
+
+}
+
+Song

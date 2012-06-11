@@ -1,0 +1,13 @@
+F = {
+  Q = 17
+  G = {
+    Print "Q is ", Q, EoL
+  }
+  G;
+  Return G
+}
+
+G = F()
+G;
+
+

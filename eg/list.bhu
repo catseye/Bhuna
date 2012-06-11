@@ -1,0 +1,13 @@
+A = ["moe","larry","curly"]
+
+B = Index(A, 1)
+
+Print B
+
+// B = [1,"hello","there"]
+// Print A, EoL
+// Print B, EoL
+// B = A
+// Print A, EoL
+// Print B, EoL
+

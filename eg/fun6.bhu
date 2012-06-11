@@ -1,0 +1,20 @@
+
+Q = {}
+P = {
+  Level = Arg[1]
+  if (Level > 0) {
+    Print "Calling Q at level ", Level, EoL
+    Q Level - 1
+    Print "Called Q, Exiting P at level ", Level, EoL
+  }
+}
+Q = {
+  Level = Arg.1
+  if (Level > 0) {
+    Print "Calling P at level ", Level, EoL
+    P Level - 1
+    Print "Called P, Exiting Q at level ", Level, EoL
+  }
+}
+
+P 10

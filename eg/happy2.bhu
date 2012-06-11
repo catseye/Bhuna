@@ -1,0 +1,5 @@
+Foo = {
+ Print Arg
+}
+
+Foo 19, 23, 76;
