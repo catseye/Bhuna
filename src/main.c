@@ -11,6 +11,8 @@
 #include "value.h"
 #include "activation.h"
 #include "vm.h"
+#include "type.h"
+#include "report.h"
 
 #ifdef POOL_VALUES
 #include "pool.h"
@@ -27,6 +29,7 @@ int trace_closures = 0;
 int trace_vm = 0;
 int trace_gen = 0;
 int trace_pool = 0;
+int trace_type_inference = 0;
 
 int num_vars_created = 0;
 int num_vars_grabbed = 0;
@@ -40,7 +43,7 @@ int activations_freed = 0;
 #endif
 
 #ifdef DEBUG
-#define OPTS "acdfg:klmnoprstvxz"
+#define OPTS "acdfg:klmnoprstvxyz"
 #define RUN_PROGRAM run_program
 #else
 #define OPTS "g:x"
@@ -78,6 +81,7 @@ usage(char **argv)
 #endif
 	fprintf(stderr, "  -x: execute bytecode (unless -n)\n");
 #ifdef DEBUG
+	fprintf(stderr, "  -y: trace type inference\n");
 	fprintf(stderr, "  -z: dump symbol table after run\n");
 #endif
 	exit(1);
@@ -95,20 +99,24 @@ load_builtins(struct symbol_table *stab, struct builtin *b)
 		sym = symbol_define(stab, b[i].name, SYM_KIND_COMMAND, v);
 		sym->is_pure = b[i].is_pure;
 		sym->builtin = &b[i];
+		sym->type = b[i].ty();
 		value_release(v);
 	}
 
 	/* XXX */
 	v = value_new_string("\n");
 	sym = symbol_define(stab, "EoL", SYM_KIND_VARIABLE, v);
+	sym->type = type_new(TYPE_STRING);
 	value_release(v);
 
 	v = value_new_boolean(1);
 	sym = symbol_define(stab, "True", SYM_KIND_VARIABLE, v);
+	sym->type = type_new(TYPE_BOOLEAN);
 	value_release(v);
 
 	v = value_new_boolean(0);
 	sym = symbol_define(stab, "False", SYM_KIND_VARIABLE, v);
+	sym->type = type_new(TYPE_BOOLEAN);
 	value_release(v);
 }
 
@@ -122,6 +130,7 @@ main(int argc, char **argv)
 	char *source = NULL;
 	int opt;
 	int use_vm = 0;
+	int err_count = 0;
 #ifdef DEBUG
 	int run_program = 1;
 	int dump_symbols_beforehand = 0;
@@ -200,6 +209,9 @@ main(int argc, char **argv)
 			use_vm = 1;
 			break;
 #ifdef DEBUG
+		case 'y':
+			trace_type_inference++;
+			break;
 		case 'z':
 			dump_symbols_afterwards = 1;
 			break;
@@ -222,6 +234,7 @@ main(int argc, char **argv)
 		stab = symbol_table_new(NULL, 0);
 		global_ar = activation_new_on_stack(100, NULL, NULL);
 		load_builtins(stab, builtins);
+		report_start();
 		a = parse_program(sc, stab);
 		scan_close(sc);
 		current_ar = global_ar;
@@ -235,7 +248,8 @@ main(int argc, char **argv)
 #ifndef DEBUG
 		symbol_table_free(stab);
 #endif
-		if (sc->errors == 0 && use_vm) {
+		err_count = report_finish();
+		if (err_count == 0 && use_vm) {
 			unsigned char *program;
 
 			program = ast_gen(a);
@@ -246,7 +260,7 @@ main(int argc, char **argv)
 			vm_release(program);
 			/*value_dump_global_table();*/
 #ifdef RECURSIVE_AST_EVALUATOR
-		} else if (sc->errors == 0 && RUN_PROGRAM) {
+		} else if (err_count == 0 && RUN_PROGRAM) {
 			v = value_new_integer(76);
 			ast_eval_init();
 			ast_eval(a, &v);

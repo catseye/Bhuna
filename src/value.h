@@ -26,11 +26,10 @@ struct builtin;
 #define VALUE_ATOM	 3
 #define	VALUE_STRING	 4
 #define	VALUE_LIST	 5
-#define	VALUE_STAB	 6
-#define	VALUE_ERROR	 7
-#define	VALUE_BUILTIN	 8
-#define VALUE_CLOSURE	 9
-#define VALUE_DICT	10
+#define	VALUE_ERROR	 6
+#define	VALUE_BUILTIN	 7
+#define VALUE_CLOSURE	 8
+#define VALUE_DICT	 9
 #define VALUE_OPAQUE	15
 
 union value_union {
@@ -51,8 +50,17 @@ struct value {
 	union value_union	v;
 };
 
+#ifdef REFCOUNTING_MACROS
+#define value_release(v)	\
+	if ((v) != NULL && (--((v)->refcount)) == 0) value_free((v));
+#define	value_grab(v)		\
+	if ((v) != NULL) (v)->refcount++;
+#else
 void		 value_grab(struct value *);
 void		 value_release(struct value *);
+#endif
+
+void		 value_free(struct value *);
 
 struct value	*value_dup(struct value *);
 

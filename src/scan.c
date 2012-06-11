@@ -43,19 +43,16 @@
 
 #include "mem.h"
 #include "scan.h"
+#include "report.h"
 
 struct scan_st *
 scan_open(char *filename)
 {
 	struct scan_st *sc;
 
-	if ((sc = bhuna_malloc(sizeof(struct scan_st))) == 0) {
-		return(NULL);
-	}
-	if ((sc->token = (char *)bhuna_malloc(256 * sizeof(char))) == NULL) {
-		bhuna_free(sc);
-		return(NULL);
-	}
+	sc = bhuna_malloc(sizeof(struct scan_st));
+	sc->token = (char *)bhuna_malloc(256 * sizeof(char));
+
 	if ((sc->in = fopen(filename, "r")) == NULL) {
 		bhuna_free(sc->token);
 		bhuna_free(sc);
@@ -64,33 +61,35 @@ scan_open(char *filename)
 
 	sc->lino = 1;
 	sc->columno = 1;
-	sc->errors = 0;
 	scan(sc);		/* prime the pump */
+
+	return(sc);
+}
+
+/*
+ * This is just to ease error reporting, so we don't copy the file or nothin'.
+ */
+struct scan_st *
+scan_dup(struct scan_st *orig)
+{
+	struct scan_st *sc;
+
+	sc = bhuna_malloc(sizeof(struct scan_st));
+	sc->token = bhuna_strdup(orig->token);
+	sc->in = NULL;
+	sc->lino = orig->lino;
+	sc->columno = orig->columno;
 
 	return(sc);
 }
 
 void
 scan_close(struct scan_st *sc)
-{	
-	fclose(sc->in);
+{
+	if (sc->in != NULL)
+		fclose(sc->in);
 	bhuna_free(sc->token);
 	bhuna_free(sc);
-}
-
-void
-scan_error(struct scan_st *sc, char *fmt, ...)
-{
-	va_list args;
-	char err[256];
-
-	va_start(args, fmt);
-	vsnprintf(err, 255, fmt, args);
-
-	printf("Error (line %d, column %d, token '%s'): %s.\n",
-	    sc->lino, sc->columno, sc->token, err);
-
-	sc->errors++;
 }
 
 void
@@ -232,6 +231,6 @@ scan_expect(struct scan_st *sc, char *x)
 	if (!strcmp(sc->token, x)) {
 		scan(sc);
 	} else {
-		scan_error(sc, "Expected '%s'", x);
+		report(REPORT_ERROR, sc, "Expected '%s'", x);
 	}
 }

@@ -1,6 +1,8 @@
 PROG=	bhuna
-SRCS=	scan.c parse.c \
+SRCS=	report.c \
+	scan.c parse.c \
 	symbol.c ast.c \
+	type.c \
 	mem.c pool.c \
 	list.c atom.c buffer.c closure.c dict.c value.c \
 	activation.c eval.c \
@@ -9,6 +11,7 @@ SRCS=	scan.c parse.c \
 	main.c
 
 CFLAGS+=-DPOOL_VALUES 
+CFLAGS+=-DREFCOUNTING_MACROS
 CFLAGS+=-DINLINE_BUILTINS
 CFLAGS+=-Wall -I/usr/local/include
 .ifndef NODEBUG

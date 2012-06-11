@@ -25,15 +25,14 @@ struct scan_st {
 	int	 type;		/* type of token that was scanned */
 	int	 lino;		/* current line number, 1-based */
 	int	 columno;	/* current column number, 1-based */
-	int	 errors;	/* # of errors encountered so far */
 };
 
 #define tokeq(sc, x)	(strcmp(sc->token, x) == 0)
 #define tokne(sc, x)	(strcmp(sc->token, x) != 0)
 
 extern struct scan_st *scan_open(char *);
+extern struct scan_st *scan_dup(struct scan_st *);
 extern void scan_close(struct scan_st *);
-extern void scan_error(struct scan_st *, char *, ...);
 extern void scan(struct scan_st *);
 extern void scan_expect(struct scan_st *, char *);
 

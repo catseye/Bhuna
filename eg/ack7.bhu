@@ -12,9 +12,4 @@ Ack = ^ M,N {
 }
 
 Num = 7
-// Print "Ack(3,", Num, "): ", Ack(3, Num), EoL
-Print "Ack(3,"
-Print Num
-Print "): "
-Print Ack(3, Num)
-Print EoL
+Print "Ack(3,", Num, "): ", Ack(3, Num), EoL

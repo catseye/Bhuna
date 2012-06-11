@@ -1,0 +1,8 @@
+H = 1
+F = ^ A, B {
+  Print A + B
+  return A - B
+}
+
+H 5, 6
+

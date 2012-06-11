@@ -1,0 +1,12 @@
+F = ^ A {
+  if A < 10
+    Print "return 5"
+  else {
+    Print "I dunno, man...", EoL
+    // return "string!"
+  }
+  // return 100
+}
+
+Print F(4)
+

@@ -37,7 +37,9 @@ extern struct activation *current_ar;
 
 extern int trace_vm;
 static int i;
+/*static int subs = 0;*/
 
+#ifdef DEBUG
 static void
 dump_stack()
 {
@@ -50,6 +52,7 @@ dump_stack()
 		printf("\n");
 	}
 }
+#endif
 
 void
 vm_run(vm_label_t program)
@@ -59,6 +62,7 @@ vm_run(vm_label_t program)
 	struct value *l = NULL, *r = NULL, *v = NULL;
 	struct activation *ar;
 	int varity;
+	/*int upcount, index; */
 
 #ifdef DEBUG
 	if (trace_vm) {
@@ -114,11 +118,11 @@ vm_run(vm_label_t program)
 		case INDEX_BUILTIN_EQU:
 			POP_VALUE(r);
 			POP_VALUE(l);
-			if (l->type == VALUE_INTEGER && r->type == VALUE_INTEGER) {
+			//if (l->type == VALUE_INTEGER && r->type == VALUE_INTEGER) {
 				v = value_new_boolean(l->v.i == r->v.i);
-			} else {
-				v = value_new_error("type mismatch");
-			}
+			//} else {
+			//	v = value_new_error("type mismatch");
+			//}
 			PUSH_VALUE(v);
 			value_release(l);
 			value_release(r);
@@ -187,11 +191,11 @@ vm_run(vm_label_t program)
 		case INDEX_BUILTIN_ADD:
 			POP_VALUE(r);
 			POP_VALUE(l);
-			if (l->type == VALUE_INTEGER && r->type == VALUE_INTEGER) {
+			//if (l->type == VALUE_INTEGER && r->type == VALUE_INTEGER) {
 				v = value_new_integer(l->v.i + r->v.i);
-			} else {
-				v = value_new_error("type mismatch");
-			}
+			//} else {
+			//	v = value_new_error("type mismatch");
+			//}
 			PUSH_VALUE(v);
 			value_release(l);
 			value_release(r);
@@ -211,6 +215,7 @@ vm_run(vm_label_t program)
 		case INDEX_BUILTIN_SUB:
 			POP_VALUE(r);
 			POP_VALUE(l);
+			//subs++;
 			if (l->type == VALUE_INTEGER && r->type == VALUE_INTEGER) {
 				v = value_new_integer(l->v.i - r->v.i);
 			} else {
@@ -268,6 +273,7 @@ vm_run(vm_label_t program)
 
 		case INSTR_PUSH_LOCAL:
 			l = activation_get_value(current_ar, *(pc + 1), *(pc + 2));
+
 #ifdef DEBUG
 			if (trace_vm) {
 				printf("INSTR_PUSH_LOCAL:\n");
@@ -477,6 +483,7 @@ vm_run(vm_label_t program)
 	if (trace_vm) {
 		printf("___ virtual machine finished ___\n");
 	}
+	/*printf("subs = %d\n", subs);*/
 #endif
 }
 

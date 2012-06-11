@@ -48,6 +48,8 @@
 #include "value.h"
 #include "atom.h"
 #include "ast.h"
+#include "type.h"
+#include "report.h"
 
 #define VAR_LOCAL		0
 #define VAR_GLOBAL		1
@@ -62,39 +64,36 @@
  * Convenience function to create AST for a named arity-2 function call.
  */
 static struct ast *
-ast_new_call2(char *name, struct symbol_table *stab,
+ast_new_call2(char *name, struct scan_st *sc, struct symbol_table *stab,
 	       struct ast *left, struct ast *right)
 {
 	struct symbol *sym;
 	struct ast *a;
 
-	left = ast_new_arg(left, NULL);
 	right = ast_new_arg(right, NULL);
-	left->u.arg.right = right;
+	left = ast_new_arg(left, right);
 
 	sym = symbol_lookup(stab, name, VAR_GLOBAL);
 	assert(sym != NULL && sym->builtin != NULL);
-	a = ast_new_builtin(sym->builtin, left);
+	a = ast_new_builtin(sc, sym->builtin, left);
 
 	return(a);
 }
 
 static struct ast *
-ast_new_call3(char *name, struct symbol_table *stab,
+ast_new_call3(char *name, struct scan_st *sc, struct symbol_table *stab,
 	       struct ast *left, struct ast *index, struct ast *right)
 {
 	struct symbol *sym;
 	struct ast *a;
 
-	left = ast_new_arg(left, NULL);
-	index = ast_new_arg(index, NULL);
 	right = ast_new_arg(right, NULL);
-	left->u.arg.right = index;
-	index->u.arg.right = right;
+	index = ast_new_arg(index, right);
+	left = ast_new_arg(left, index);
 
 	sym = symbol_lookup(stab, name, VAR_GLOBAL);
 	assert(sym != NULL && sym->builtin != NULL);
-	a = ast_new_builtin(sym->builtin, left);
+	a = ast_new_builtin(sc, sym->builtin, left);
 
 	return(a);
 }
@@ -170,13 +169,13 @@ parse_statement(struct scan_st *sc, struct symbol_table *stab, int *retr, int *c
 		} else {
 			r = NULL;
 		}
-		a = ast_new_conditional(a, l, r);
+		a = ast_new_conditional(sc, a, l, r);
 	} else if (tokeq(sc, "while")) {
 		scan(sc);
 		l = parse_expr(sc, stab, 0, NULL, cc);
 		istab = symbol_table_new(stab, 0);
 		r = parse_block(sc, stab, &istab, cc);
-		a = ast_new_while_loop(l, r);
+		a = ast_new_while_loop(sc, l, r);
 	} else if (tokeq(sc, "return")) {
 		scan(sc);
 		a = parse_expr(sc, stab, 0, NULL, cc);
@@ -235,7 +234,7 @@ parse_definition(struct scan_st *sc, struct symbol_table *stab, int is_const,
 	r = parse_expr(sc, stab, 0, sym, cc);
 	if (is_const) {
 		if (r == NULL || r->type != AST_VALUE) {
-			scan_error(sc, "Expression must be constant");
+			report(REPORT_ERROR, sc, "Expression must be constant");
 		} else {
 			symbol_set_value(sym, r->u.value.value);
 			ast_free(l);
@@ -243,7 +242,7 @@ parse_definition(struct scan_st *sc, struct symbol_table *stab, int is_const,
 		}
 		return(NULL);
 	} else {
-		return(ast_new_assignment(l, r));
+		return(ast_new_assignment(sc, l, r));
 	}
 }
 
@@ -252,7 +251,7 @@ parse_command_or_assignment(struct scan_st *sc, struct symbol_table *stab,
 			    int *cc)
 {
 	struct symbol *sym;
-	struct ast *a, *l, *r, *z;
+	struct ast *a, *l, *r;
 
 	a = parse_var(sc, stab, &sym, VAR_GLOBAL, VAR_MUST_EXIST, NULL);
 
@@ -273,7 +272,7 @@ parse_command_or_assignment(struct scan_st *sc, struct symbol_table *stab,
 				 */
 				scan(sc);
 				r = parse_expr(sc, stab, 0, NULL, cc);
-				a = ast_new_call3("Store", stab, a, l, r);
+				a = ast_new_call3("Store", sc, stab, a, l, r);
 				return(a);
 			} else if (tokne(sc, "[") && tokne(sc, ".")) {
 				/*
@@ -284,12 +283,12 @@ parse_command_or_assignment(struct scan_st *sc, struct symbol_table *stab,
 				/*
 				 * Still more to go.
 				 */
-				a = ast_new_call2("Fetch", stab, a, l);
+				a = ast_new_call2("Fetch", sc, stab, a, l);
 			}
 		} else if (tokeq(sc, ".")) {
 			scan(sc);
 			r = parse_literal(sc, stab);
-			a = ast_new_call2("Fetch", stab, a, r);
+			a = ast_new_call2("Fetch", sc, stab, a, r);
 		}
 	}
 	
@@ -299,39 +298,57 @@ parse_command_or_assignment(struct scan_st *sc, struct symbol_table *stab,
 	 */
 	if (tokeq(sc, "=")) {
 		if (sym->value != NULL) {
-			scan_error(sc, "Value not modifiable");
+			report(REPORT_ERROR, sc, "Value not modifiable");
 		} else {
 			scan(sc);
 			r = parse_expr(sc, stab, 0, NULL, cc);
-			a = ast_new_assignment(a, r);
+			a = ast_new_assignment(sc, a, r);
 		}
 		return(a);
+	}
+
+	if (tokne(sc, "}") && tokne(sc, ";") && sc->type != TOKEN_EOF) {
+		l = parse_expr_list(sc, stab, NULL, cc);
+	} else {
+		l = NULL;
 	}
 
 	/*
 	 * Otherwise, it's a command.
 	 */
-	if (tokne(sc, "}") && tokne(sc, ";") && sc->type != TOKEN_EOF) {
-		l = parse_expr(sc, stab, 0, NULL, cc);
-		l = ast_new_arg(l, NULL);
-		z = l;
-		while (tokeq(sc, ",")) {
-			scan_expect(sc, ",");
-			r = parse_expr(sc, stab, 0, NULL, cc);
-			r = ast_new_arg(r, NULL);
-			z->u.arg.right = r;
-			z = r;
-		}
-	} else {
-		l = NULL;
+	if (!type_is_possibly_routine(sym->type)) {
+		report(REPORT_ERROR, sc, "Command application of non-routine variable");
+		/*return(NULL);*/
 	}
+	type_ensure_routine(sym->type);
+	if (!type_is_void(type_representative(sym->type)->t.closure.range)) {
+		report(REPORT_ERROR, sc, "Command application of function variable");
+		/*return(NULL);*/
+	}
+
 	if (sym->builtin != NULL) {
-		a = ast_new_builtin(sym->builtin, l);
+		a = ast_new_builtin(sc, sym->builtin, l);
 	} else {
-		a = ast_new_apply(a, l, 0);
+		a = ast_new_apply(sc, a, l, 0);
 	}
 
 	return(a);
+}
+
+struct ast *
+parse_expr_list(struct scan_st *sc, struct symbol_table *stab,
+		struct symbol *excl, int *cc)
+{
+	struct ast *a, *b;
+
+	a = parse_expr(sc, stab, 0, excl, cc);
+	if (tokeq(sc, ",")) {
+		scan(sc);
+		b = parse_expr_list(sc, stab, excl, cc);
+	} else {
+		b = NULL;
+	}
+	return(ast_new_arg(a, b));
 }
 
 /* ------------------------- EXPRESSIONS ------------------------ */
@@ -366,7 +383,7 @@ parse_expr(struct scan_st *sc, struct symbol_table *stab, int level,
 					scan(sc);
 					done = 0;
 					r = parse_expr(sc, stab, level + 1, excl, cc);
-					l = ast_new_call2(the_op, stab, l, r);
+					l = ast_new_call2(the_op, sc, stab, l, r);
 					break;
 				}
 			}
@@ -379,7 +396,7 @@ struct ast *
 parse_primitive(struct scan_st *sc, struct symbol_table *stab,
 	        struct symbol *excl, int *cc)
 {
-	struct ast *a, *l, *r, *z;
+	struct ast *a, *l, *r;
 	struct value *v;
 	struct symbol *sym;
 	struct symbol_table *istab;
@@ -391,6 +408,7 @@ parse_primitive(struct scan_st *sc, struct symbol_table *stab,
 	} else if (tokeq(sc, "^")) {
 		int my_cc = 0;
 		int my_arity = 0;
+		struct type *a_type = NULL;
 
 		/*
 		 * Enclosing block contains a closure:
@@ -402,83 +420,88 @@ parse_primitive(struct scan_st *sc, struct symbol_table *stab,
 			a = parse_var(sc, istab, &sym,
 			    VAR_LOCAL, VAR_MUST_NOT_EXIST, NULL);
 			ast_free(a);
+			if (a_type == NULL)
+				a_type = sym->type;
+			else
+				a_type = type_new_arg(sym->type, a_type);
 			my_arity++;
+			/*
+			printf("ARG TYPE:");
+			type_print(stdout, a_type);
+			printf("\n");
+			*/
 			if (tokeq(sc, ","))
 				scan(sc);
 		}
+		if (a_type == NULL)
+			a_type = type_new(TYPE_VOID);
 		a = parse_block(sc, stab, &istab, &my_cc);
 		a = ast_new_routine(my_arity, symbol_table_size(istab) - my_arity, my_cc, a);
+		if (type_is_set(a->datatype) && type_set_contains_void(a->datatype)) {
+			report(REPORT_ERROR, sc, "Routine must be either function or command");
+		}
 		v = value_new_closure(a, NULL);
-		a = ast_new_value(v);
+		a = ast_new_value(v,
+		    type_new_closure(a_type, a->datatype));
 		value_release(v);
 	} else if (tokeq(sc, "!")) {
 		scan(sc);
 		a = parse_primitive(sc, stab, excl, cc);
 		sym = symbol_lookup(stab, "!", 1);
-		a = ast_new_apply(ast_new_local(
-		    sym->index,
-		    stab->level - sym->in->level,
-		    sym), a, 1);
+		/* XXX builtin */
+		a = ast_new_apply(sc, ast_new_local(stab, sym), a, 1);
 	} else if (tokeq(sc, "[")) {
 		scan(sc);
 		v = value_new_list();
-		a = ast_new_value(v);
+		a = ast_new_value(v, NULL);	/* XXX list */
 		value_release(v);
 		if (tokne(sc, "]")) {
-			ast_free(a);
-			l = parse_expr(sc, stab, 0, excl, cc);
-			r = ast_new_arg(l, NULL);
-			z = r;
-			while (tokeq(sc, ",")) {
-				scan(sc);
-				l = parse_expr(sc, stab, 0, excl, cc);
-				l = ast_new_arg(l, NULL);
-				z->u.arg.right = l;
-				z = l;
-			}
+			l = parse_expr_list(sc, stab, excl, cc);
 			sym = symbol_lookup(stab, "List", VAR_GLOBAL);
 			assert(sym->builtin != NULL);
-			a = ast_new_builtin(sym->builtin, r);
+			a = ast_new_builtin(sc, sym->builtin, l);
 		}
 		scan_expect(sc, "]");
 	} else if (sc->type == TOKEN_BAREWORD && isupper(sc->token[0])) {
 		a = parse_var(sc, stab, &sym, VAR_GLOBAL, VAR_MUST_EXIST, NULL);
 		if (sym == excl) {
-			scan_error(sc, "Initializer cannot refer to variable being defined");
+			report(REPORT_ERROR, sc, "Initializer cannot refer to variable being defined");
 			return(NULL);
 		}
 		while (tokeq(sc, "(") || tokeq(sc, "[") || tokeq(sc, ".")) {
 			if (tokeq(sc, "(")) {
 				scan(sc);
 				if (tokne(sc, ")")) {
-					l = parse_expr(sc, stab, 0, excl, cc);
-					l = ast_new_arg(l, NULL);
-					z = l;
-					while (tokeq(sc, ",")) {
-						scan(sc);
-						r = parse_expr(sc, stab, 0, excl, cc);
-						r = ast_new_arg(r, NULL);
-						z->u.arg.right = r;
-						z = r;
-					}
+					l = parse_expr_list(sc, stab, excl, cc);
 				} else {
 					l = NULL;
 				}
 				scan_expect(sc, ")");
+
+				if (!type_is_possibly_routine(sym->type)) {
+					report(REPORT_ERROR, sc, "Function application of non-routine variable");
+					/*return(NULL);*/
+				}
+				type_ensure_routine(sym->type);
+				if (type_is_void(type_representative(sym->type)->t.closure.range)) {
+					report(REPORT_ERROR, sc, "Function application of command variable");
+					/*return(NULL);*/
+				}
+				
 				if (sym->builtin != NULL) {
-					a = ast_new_builtin(sym->builtin, l);
+					a = ast_new_builtin(sc, sym->builtin, l);
 				} else {
-					a = ast_new_apply(a, l, sym->is_pure);
+					a = ast_new_apply(sc, a, l, sym->is_pure);
 				}
 			} else if (tokeq(sc, "[")) {
 				scan(sc);
 				r = parse_expr(sc, stab, 0, excl, cc);
 				scan_expect(sc, "]");
-				a = ast_new_call2("Fetch", stab, a, r);
+				a = ast_new_call2("Fetch", sc, stab, a, r);
 			} else if (tokeq(sc, ".")) {
 				scan(sc);
 				r = parse_literal(sc, stab);
-				a = ast_new_call2("Fetch", stab, a, r);
+				a = ast_new_call2("Fetch", sc, stab, a, r);
 			}
 		}
 	} else {
@@ -496,21 +519,21 @@ parse_literal(struct scan_st *sc, struct symbol_table *stab)
 
 	if (sc->type == TOKEN_BAREWORD && islower(sc->token[0])) {
 		v = value_new_atom(atom_resolve(sc->token));
-		a = ast_new_value(v);
+		a = ast_new_value(v, type_new(TYPE_ATOM));
 		value_release(v);
 		scan(sc);		
 	} else if (sc->type == TOKEN_NUMBER) {
 		v = value_new_integer(atoi(sc->token));
-		a = ast_new_value(v);
+		a = ast_new_value(v, type_new(TYPE_INTEGER));
 		value_release(v);
 		scan(sc);
 	} else if (sc->type == TOKEN_QSTRING) {
 		v = value_new_string(sc->token);
-		a = ast_new_value(v);
+		a = ast_new_value(v, type_new(TYPE_STRING));
 		value_release(v);
 		scan(sc);
 	} else {
-		scan_error(sc, "Illegal literal");
+		report(REPORT_ERROR, sc, "Illegal literal");
 		scan(sc);
 		a = NULL;
 	}
@@ -529,20 +552,21 @@ parse_var(struct scan_st *sc, struct symbol_table *stab,
 	*sym = symbol_lookup(stab, sc->token, globality);
 	if (*sym == NULL) {
 		if (existence == VAR_MUST_EXIST) {
-			scan_error(sc, "Undefined symbol");
+			report(REPORT_ERROR, sc, "Undefined symbol");
 		}
 		*sym = symbol_define(stab, sc->token, SYM_KIND_VARIABLE, v);
+		symbol_set_type(*sym, type_brand_new_var());
 	} else {
 		if (existence == VAR_MUST_NOT_EXIST) {
-			scan_error(sc, "Symbol already defined");
+			report(REPORT_ERROR, sc, "Symbol already defined");
 		}
 	}
 	scan(sc);
 
 	if ((*sym)->value != NULL) {
-		a = ast_new_value((*sym)->value);
+		a = ast_new_value((*sym)->value, (*sym)->type);
 	} else {
-		a = ast_new_local((*sym)->index, stab->level - (*sym)->in->level, (*sym));
+		a = ast_new_local(stab, (*sym));
 	}
 	return(a);
 }

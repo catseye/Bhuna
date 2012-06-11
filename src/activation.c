@@ -162,6 +162,7 @@ activation_free_from_stack(struct activation *a)
 	a_sp -= (sizeof(struct activation) + sizeof(struct value *) * a->size);
 }
 
+/*#ifndef REFCOUNTING_MACROS*/
 struct value *
 activation_get_value(struct activation *a, int index, int upcount)
 {
@@ -208,6 +209,7 @@ activation_initialize_value(struct activation *a, int index,
 	value_grab(v);
 	VALARY(a, index) = v;
 }
+/*#endif*/
 
 void
 activation_dump(struct activation *a, int detail)

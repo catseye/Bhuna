@@ -1,0 +1,10 @@
+S = "lessthanten"
+
+F = ^ A {
+  if A > 10
+    return A
+  else
+    return S
+}
+
+B = F(8)

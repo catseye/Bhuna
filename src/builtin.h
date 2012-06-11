@@ -3,10 +3,12 @@
 
 struct value;
 struct activation;
+struct type;
 
 struct builtin {
 	char *name;
 	void (*fn)(struct activation *, struct value **);
+	struct type *(*ty)(void);
 	int arity;
 	int is_pure;
 	int is_const;
@@ -61,5 +63,15 @@ void builtin_fetch(struct activation *, struct value **);
 void builtin_store(struct activation *, struct value **);
 
 void builtin_dict(struct activation *, struct value **);
+
+struct type		*btype_print(void);
+struct type		*btype_unary_logic(void);
+struct type		*btype_binary_logic(void);
+struct type		*btype_compare(void);
+struct type		*btype_arith(void);
+struct type		*btype_list(void);
+struct type		*btype_fetch(void);
+struct type		*btype_store(void);
+struct type		*btype_dict(void);
 
 #endif

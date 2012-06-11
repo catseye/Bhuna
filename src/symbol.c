@@ -45,6 +45,7 @@
 
 #include "mem.h"
 #include "symbol.h"
+#include "type.h"
 #include "value.h"
 
 /*** GLOBALS ***/
@@ -70,6 +71,7 @@ symbol_new(char *token, int kind)
 	sym->in = NULL;
 	sym->index = -1;
 	sym->is_pure = 0;
+	sym->type = NULL;
 	sym->value = NULL;
 	sym->builtin = NULL;
 
@@ -79,6 +81,7 @@ symbol_new(char *token, int kind)
 static void
 symbol_free(struct symbol *sym)
 {
+	type_free(&sym->type);
 	value_release(sym->value);
 	bhuna_free(sym->token);
 	bhuna_free(sym);
@@ -206,6 +209,15 @@ symbol_is_global(struct symbol *sym)
 }
 
 void
+symbol_set_type(struct symbol *sym, struct type *t)
+{
+	if (sym->type != NULL) {
+		type_free(&sym->type);
+	}
+	sym->type = t;
+}
+
+void
 symbol_set_value(struct symbol *sym, struct value *v)
 {
 	assert(sym->value != NULL);
@@ -248,9 +260,20 @@ symbol_dump(struct symbol *sym, int show_ast)
 	for (i = 0; i < stab_indent; i++)
 		printf(" ");
 	printf("`%s'(%08lx)", sym->token, (unsigned long)sym);
+	type_print(stdout, sym->type);
 	if (sym->value != NULL) {
 		printf("=");
 		value_print(sym->value);
 	}
+#endif
+}
+
+void
+symbol_print(FILE *f, struct symbol *sym)
+{
+#ifdef DEBUG
+	fprintf(f, "symbol `%s' (type = ", sym->token);
+	type_print(f, sym->type);
+	fprintf(f, ")");
 #endif
 }

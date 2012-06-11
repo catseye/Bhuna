@@ -7,32 +7,33 @@
 #include "dict.h"
 #include "closure.h"
 #include "activation.h"
+#include "type.h"
 
 /*
  * Built-in operations.
  */
 
 struct builtin builtins[] = {
-	{"Print",	builtin_print,	-1,	0,	1,	0},
-	{"!",		builtin_not,	 1,	1,	1,	1},
-	{"&",		builtin_and,	 2,	1,	1,	2},
-	{"|",		builtin_or,	 2,	1,	1,	3},
-	{"=",		builtin_equ,	 2,	1,	1,	4},
-	{"!=",		builtin_neq,	 2,	1,	1,	5},
-	{">",		builtin_gt,	 2,	1,	1,	6},
-	{"<",		builtin_lt,	 2,	1,	1,	7},
-	{">=",		builtin_gte,	 2,	1,	1,	8},
-	{"<=",		builtin_lte,	 2,	1,	1,	9},
-	{"+",		builtin_add,	 2,	1,	1,	10},
-	{"-",		builtin_sub,	 2,	1,	1,	11},
-	{"*",		builtin_mul,	 2,	1,	1,	12},
-	{"/",		builtin_div,	 2,	1,	1,	13},
-	{"%",		builtin_mod,	 2,	1,	1,	14},
-	{"List",	builtin_list,	-1,	1,	1,	15},
-	{"Fetch",	builtin_fetch,	 2,	1,	1,	16},
-	{"Store",	builtin_store,	 3,	0,	1,	17},
-	{"Dict",	builtin_dict,	-1,	1,	1,	18},
-	{NULL,		NULL,		 0,	0,	0,	19}
+	{"Print",	builtin_print,	btype_print,		-1, 0, 1, 0},
+	{"!",		builtin_not,	btype_unary_logic,	 1, 1, 1, 1},
+	{"&",		builtin_and,	btype_binary_logic,	 2, 1, 1, 2},
+	{"|",		builtin_or,	btype_binary_logic,	 2, 1, 1, 3},
+	{"=",		builtin_equ,	btype_compare,		 2, 1, 1, 4},
+	{"!=",		builtin_neq,	btype_compare,		 2, 1, 1, 5},
+	{">",		builtin_gt,	btype_compare,		 2, 1, 1, 6},
+	{"<",		builtin_lt,	btype_compare,		 2, 1, 1, 7},
+	{">=",		builtin_gte,	btype_compare,		 2, 1, 1, 8},
+	{"<=",		builtin_lte,	btype_compare,		 2, 1, 1, 9},
+	{"+",		builtin_add,	btype_arith,		 2, 1, 1, 10},
+	{"-",		builtin_sub,	btype_arith,		 2, 1, 1, 11},
+	{"*",		builtin_mul,	btype_arith,		 2, 1, 1, 12},
+	{"/",		builtin_div,	btype_arith,		 2, 1, 1, 13},
+	{"%",		builtin_mod,	btype_arith,		 2, 1, 1, 14},
+	{"List",	builtin_list,	btype_list,		-1, 1, 1, 15},
+	{"Fetch",	builtin_fetch,	btype_fetch,		 2, 1, 1, 16},
+	{"Store",	builtin_store,	btype_store,		 3, 0, 1, 17},
+	{"Dict",	builtin_dict,	btype_dict,		-1, 1, 1, 18},
+	{NULL,		NULL,		NULL,			 0, 0, 0, 19}
 };
 
 void
@@ -390,4 +391,101 @@ builtin_dict(struct activation *ar, struct value **v)
 			value_release(val);
 		}
 	}
+}
+
+struct type *
+btype_print(void)
+{
+	return(
+	  type_new_closure(
+	    type_new_var(1),
+	    type_new(TYPE_VOID)
+	  )
+	);
+}
+
+struct type *
+btype_unary_logic(void)
+{
+	return(
+	  type_new_closure(
+	    type_new(TYPE_BOOLEAN),
+	    type_new(TYPE_BOOLEAN)
+	  )
+	);
+}
+
+struct type *
+btype_binary_logic(void)
+{
+	return(
+	  type_new_closure(
+	    type_new_arg(type_new(TYPE_BOOLEAN), type_new(TYPE_BOOLEAN)),
+	    type_new(TYPE_BOOLEAN)
+	  )
+	);
+}
+
+struct type *
+btype_compare(void)
+{
+	return(
+	  type_new_closure(
+	    type_new_arg(type_new(TYPE_INTEGER), type_new(TYPE_INTEGER)),
+	    type_new(TYPE_BOOLEAN)
+	  )
+	);
+}
+
+struct type *
+btype_arith(void)
+{
+	return(
+	  type_new_closure(
+	    type_new_arg(type_new(TYPE_INTEGER), type_new(TYPE_INTEGER)),
+	    type_new(TYPE_INTEGER)
+	  )
+	);
+}
+
+struct type *
+btype_list(void)
+{
+	return(
+	  type_new_closure(
+	    type_new_var(2),
+	    type_new_list(type_new(TYPE_INTEGER))
+	  )
+	);
+}
+
+struct type *
+btype_fetch(void)
+{
+	return(
+	  type_new_closure(
+	    type_new_arg(type_new_var(5), type_new(TYPE_INTEGER)),
+	    type_new_var(5)
+	  )
+	);
+}
+
+struct type *
+btype_store(void)
+{
+	return(
+	  type_new_closure(
+	    type_new_arg(
+		type_new_var(6),
+		type_new_arg(type_new_var(7), type_new_var(8))
+	    ),
+	    type_new(TYPE_VOID)
+	  )
+	);
+}
+
+struct type *
+btype_dict(void)
+{
+	return(NULL);
 }

@@ -7,7 +7,10 @@
 #ifndef __SYMBOL_H_
 #define __SYMBOL_H_
 
+#include <stdio.h>
+
 struct value;
+struct type;
 
 struct symbol_table {
 	struct symbol_table	*parent;	/* link to scopes above us */
@@ -21,6 +24,7 @@ struct symbol {
 	struct symbol		*next;	/* next symbol in symbol table */
 	char			*token;	/* lexeme making up the symbol */
 	int			 kind;	/* kind of symbol */
+	struct type		*type;	/* data type */
 
 	struct builtin		*builtin;
 	int			 is_pure; /* if true, symbol represents a function which is ref.transp. */
@@ -47,9 +51,12 @@ struct symbol		*symbol_lookup(struct symbol_table *, char *, int);
 
 int			 symbol_is_global(struct symbol *);
 
+void			 symbol_set_type(struct symbol *, struct type *);
 void			 symbol_set_value(struct symbol *, struct value *);
 
 void			 symbol_table_dump(struct symbol_table *, int);
 void			 symbol_dump(struct symbol *, int);
+
+void			 symbol_print(FILE *f, struct symbol *);
 
 #endif /* !__SYMBOL_H_ */

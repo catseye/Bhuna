@@ -5,13 +5,15 @@
 
 struct value;
 struct builtin;
+struct type;
+struct symbol;
+struct symbol_table;
+struct scan_st;
 
 struct ast_local {
 	int			 index;
 	int			 upcount;
-#ifdef DEBUG
 	struct symbol		*sym;
-#endif
 };
 
 struct ast_value {
@@ -94,21 +96,23 @@ union ast_union {
 };
 
 struct ast {
-	int				type;
-	vm_label_t			label;
-	union ast_union			u;
+	int				 type;
+	struct scan_st			*sc;
+	struct type			*datatype;
+	vm_label_t			 label;
+	union ast_union			 u;
 };
 
-struct ast		*ast_new_local(int, int, void *);
-struct ast		*ast_new_value(struct value *);
-struct ast		*ast_new_builtin(struct builtin *, struct ast *);
-struct ast		*ast_new_apply(struct ast *, struct ast *, int);
+struct ast		*ast_new_local(struct symbol_table *, struct symbol *);
+struct ast		*ast_new_value(struct value *, struct type *);
+struct ast		*ast_new_builtin(struct scan_st *, struct builtin *, struct ast *);
+struct ast		*ast_new_apply(struct scan_st *, struct ast *, struct ast *, int);
 struct ast		*ast_new_arg(struct ast *, struct ast *);
 struct ast		*ast_new_routine(int, int, int, struct ast *);
 struct ast		*ast_new_statement(struct ast *, struct ast *);
-struct ast		*ast_new_assignment(struct ast *, struct ast *);
-struct ast		*ast_new_conditional(struct ast *, struct ast *, struct ast *);
-struct ast		*ast_new_while_loop(struct ast *, struct ast *);
+struct ast		*ast_new_assignment(struct scan_st *, struct ast *, struct ast *);
+struct ast		*ast_new_conditional(struct scan_st *, struct ast *, struct ast *, struct ast *);
+struct ast		*ast_new_while_loop(struct scan_st *, struct ast *, struct ast *);
 struct ast		*ast_new_retr(struct ast *);
 void			 ast_free(struct ast *);
 

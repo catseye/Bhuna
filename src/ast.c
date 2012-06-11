@@ -8,12 +8,13 @@
 #include "builtin.h"
 #include "activation.h"
 #include "vm.h"
+#include "type.h"
+#include "scan.h"
 
-#ifdef DEBUG
 #include "symbol.h"
-#endif
 
 extern unsigned char program[];
+extern int trace_type_inference;
 
 /***** constructors *****/
 
@@ -24,42 +25,88 @@ ast_new(int type)
 
 	a = malloc(sizeof(struct ast));
 	a->type = type;
+	a->sc = NULL;
 	a->label = NULL;
+	a->datatype = NULL;
 
 	return(a);
 }
 
 struct ast *
-ast_new_local(int index, int upcount, void *sym)
+ast_new_local(struct symbol_table *stab, struct symbol *sym)
 {
 	struct ast *a;
 
 	a = ast_new(AST_LOCAL);
-	a->u.local.index = index;
-	a->u.local.upcount = upcount;
-#ifdef DEBUG
+	a->u.local.index = sym->index;
+	a->u.local.upcount = stab->level - sym->in->level;
 	a->u.local.sym = sym;
+	a->datatype = sym->type;
+
+#ifdef DEBUG
+	if (trace_type_inference) {
+		printf("(new-local)*****\n");
+		printf("type is: ");
+		type_print(stdout, a->datatype);
+		printf("\n*******\n");
+	}
 #endif
 
 	return(a);
 }
 
 struct ast *
-ast_new_value(struct value *v)
+ast_new_value(struct value *v, struct type *t)
 {
 	struct ast *a;
 
 	a = ast_new(AST_VALUE);
 	value_grab(v);
 	a->u.value.value = v;
+	a->datatype = t;
+
+#ifdef DEBUG
+	if (trace_type_inference) {
+		printf("(value)*****\n");
+		printf("type is: ");
+		type_print(stdout, a->datatype);
+		printf("\n*******\n");
+	}
+#endif
 
 	return(a);
 }
 
 struct ast *
-ast_new_builtin(struct builtin *bi, struct ast *right)
+ast_new_builtin(struct scan_st *sc, struct builtin *bi, struct ast *right)
 {
 	struct ast *a;
+	struct type *t;
+	int unify = 0;
+
+	t = bi->ty();
+	type_ensure_routine(t);
+
+#ifdef DEBUG
+	if (trace_type_inference) {
+		printf("(builtin `%s`)*****\n", bi->name);
+		printf("type of args is: ");
+		type_print(stdout, right->datatype);
+		printf("\ntype of builtin is: ");
+		type_print(stdout, t);
+	}
+#endif
+
+	unify = type_unify_crit(sc,
+	    type_representative(t)->t.closure.domain,
+	    right->datatype);
+
+#ifdef DEBUG
+	if (trace_type_inference) {
+		printf("\nthese unify? --> %d <--", unify);
+		printf("\n****\n");
+	}
+#endif
 
 	/*
 	 * Fold constants.
@@ -76,17 +123,23 @@ ast_new_builtin(struct builtin *bi, struct ast *right)
 		} else {
 			varity = bi->arity;
 		}
-		ar = activation_new_on_stack(varity, NULL, NULL);
-		for (g = right, i = 0;
-		     g != NULL && g->type == AST_ARG && i < varity;
-		     g = g->u.arg.right, i++) {
-			if (g->u.arg.left != NULL)
-				activation_initialize_value(ar, i,
-				     g->u.arg.left->u.value.value);
+
+		if (unify) {
+			ar = activation_new_on_stack(varity, NULL, NULL);
+			for (g = right, i = 0;
+			     g != NULL && g->type == AST_ARG && i < varity;
+			     g = g->u.arg.right, i++) {
+				if (g->u.arg.left != NULL)
+					activation_initialize_value(ar, i,
+					     g->u.arg.left->u.value.value);
+			}
+			bi->fn(ar, &v);
+			activation_free_from_stack(ar);
+		} else {
+			a = NULL;
 		}
-		bi->fn(ar, &v);
-		activation_free_from_stack(ar);
-		a = ast_new_value(v);
+
+		a = ast_new_value(v, type_representative(t)->t.closure.range);
 		value_release(v);
 
 		return(a);
@@ -96,19 +149,52 @@ ast_new_builtin(struct builtin *bi, struct ast *right)
 
 	a->u.builtin.bi = bi;
 	a->u.builtin.right = right;
+	a->datatype = type_representative(t)->t.closure.range;
 
 	return(a);
 }
 
 struct ast *
-ast_new_apply(struct ast *fn, struct ast *args, int is_pure)
+ast_new_apply(struct scan_st *sc, struct ast *fn, struct ast *args, int is_pure)
 {
 	struct ast *a;
+	int unify;
 
 	a = ast_new(AST_APPLY);
 	a->u.apply.left = fn;
 	a->u.apply.right = args;
 	a->u.apply.is_pure = is_pure;
+
+	type_ensure_routine(fn->datatype);
+
+#ifdef DEBUG
+	if (trace_type_inference) {
+		printf("(apply)*****\n");
+		printf("type of args is: ");
+		if (args == NULL) printf("N/A"); else type_print(stdout, args->datatype);
+		printf("\ntype of closure is: ");
+		type_print(stdout, fn->datatype);
+	}
+#endif
+
+	if (args == NULL) {
+		unify = type_unify_crit(sc,
+		    type_representative(fn->datatype)->t.closure.domain,
+		    type_new(TYPE_VOID));	/* XXX need not be new */
+	} else {
+		unify = type_unify_crit(sc,
+		    type_representative(fn->datatype)->t.closure.domain,
+		    args->datatype);
+	}
+
+#ifdef DEBUG
+	if (trace_type_inference) {
+		printf("\nthese unify? --> %d <--", unify);
+		printf("\n****\n");
+	}
+#endif
+
+	a->datatype = type_representative(fn->datatype)->t.closure.range;
 
 	return(a);
 }
@@ -121,7 +207,13 @@ ast_new_arg(struct ast *left, struct ast *right)
 	a = ast_new(AST_ARG);
 	a->u.arg.left = left;
 	a->u.arg.right = right;
-
+	if (a->u.arg.right == NULL) {
+		a->datatype = a->u.arg.left->datatype;
+	} else {
+		a->datatype = type_new_arg(
+		    a->u.arg.left->datatype,
+		    a->u.arg.right->datatype);
+	}
 	return(a);
 }
 
@@ -135,6 +227,17 @@ ast_new_routine(int arity, int locals, int cc, struct ast *body)
 	a->u.routine.locals = locals;
 	a->u.routine.cc = cc;
 	a->u.routine.body = body;
+	
+	a->datatype = a->u.routine.body->datatype;
+
+#ifdef DEBUG
+	if (trace_type_inference) {
+		printf("(routine)*****\n");
+		printf("type is: ");
+		type_print(stdout, a->datatype);
+		printf("\n****\n");
+	}
+#endif
 
 	return(a);
 }
@@ -154,45 +257,124 @@ ast_new_statement(struct ast *left, struct ast *right)
 	a = ast_new(AST_STATEMENT);
 	a->u.statement.left = left;
 	a->u.statement.right = right;
+	/* XXX check that a->u.statement.left->datatype is VOID ?? */
+	a->datatype = a->u.statement.right->datatype;
+	/* haha... */
+	/*
+	a->datatype = type_new_set(a->u.statement.left->datatype,
+	    a->u.statement.right->datatype);
+	*/
+
+#ifdef DEBUG
+	if (trace_type_inference) {
+		printf("(statement)*****\n");
+		printf("type is: ");
+		type_print(stdout, a->datatype);
+		printf("\n****\n");
+	}
+#endif
 
 	return(a);
 }
 
 struct ast *
-ast_new_assignment(struct ast *left, struct ast *right)
+ast_new_assignment(struct scan_st *sc, struct ast *left, struct ast *right)
 {
 	struct ast *a;
+	int unify;
+
+	/*
+	 * Do some 'self-repairing' in the case of syntax errors that
+	 * generate a corrupt AST (e.g. Foo = <eof>)
+	 */
+	if (right == NULL)
+		return(left);
 
 	a = ast_new(AST_ASSIGNMENT);
 	a->u.assignment.left = left;
 	a->u.assignment.right = right;
 
+	unify = type_unify_crit(sc, left->datatype, right->datatype);
+
+#ifdef DEBUG
+	if (trace_type_inference) {
+		printf("(assign)*****\n");
+		printf("type of LHS is: ");
+		type_print(stdout, left->datatype);
+		printf("\ntype of RHS is: ");
+		type_print(stdout, right->datatype);
+		printf("\nthese unify? --> %d <--", unify);
+		printf("\ntype of LHS is now: ");
+		type_print(stdout, left->datatype);
+		printf("\n****\n");
+	}
+#endif
+
 	return(a);
 }
 
 struct ast *
-ast_new_conditional(struct ast *test, struct ast *yes, struct ast *no)
+ast_new_conditional(struct scan_st *sc, struct ast *test, struct ast *yes, struct ast *no)
 {
 	struct ast *a;
+	int unify;
 
 	a = ast_new(AST_CONDITIONAL);
 	a->u.conditional.test = test;
 	a->u.conditional.yes = yes;
 	a->u.conditional.no = no;
+	/* check that a->u.conditional.test is BOOLEAN */
+
+	/* XXX need not be new boolean - reuse an old one */
+	unify = type_unify_crit(sc, test->datatype, type_new(TYPE_BOOLEAN));
+
+#ifdef DEBUG
+	if (trace_type_inference) {
+		printf("(if)*****\n");
+		printf("type of YES is: ");
+		type_print(stdout, yes->datatype);
+		printf("\ntype of NO is: ");
+		type_print(stdout, no->datatype);
+	}
+#endif
+
+	/* XXX check that a->u.conditional.yes is VOID */
+	/* XXX check that a->u.conditional.no is VOID */
+
+	/* actually, either of these can be VOID, in which case, pick the other */
+	/* unify = type_unify_crit(sc, yes->datatype, no->datatype); */
+	/* haha */
+	a->datatype = type_new_set(a->u.conditional.yes->datatype,
+	    a->u.conditional.no->datatype);
+
+#ifdef DEBUG
+	if (trace_type_inference) {
+		printf("\nresult type is: ");
+		type_print(stdout, a->datatype);
+		printf("\n****\n");
+	}
+#endif
 
 	return(a);
 }
 
 struct ast *
-ast_new_while_loop(struct ast *test, struct ast *body)
+ast_new_while_loop(struct scan_st *sc, struct ast *test, struct ast *body)
 {
 	struct ast *a;
+	int unify;
 
 	a = malloc(sizeof(struct ast));
 	a->type = AST_WHILE_LOOP;
 
 	a->u.while_loop.test = test;
 	a->u.while_loop.body = body;
+	/* XXX need not be new boolean - reuse an old one */
+	unify = type_unify_crit(sc, test->datatype, type_new(TYPE_BOOLEAN));
+
+	/* XXX check that a->u.while_loop.body is VOID */
+	/* a->datatype = type_new(TYPE_VOID); */
+	a->datatype = body->datatype;
 
 	return(a);
 }
@@ -204,6 +386,17 @@ ast_new_retr(struct ast *body)
 
 	a = ast_new(AST_RETR);
 	a->u.retr.body = body;
+	/* XXX check against other return statements in same function... somehow... */
+	a->datatype = a->u.retr.body->datatype;
+
+#ifdef DEBUG
+	if (trace_type_inference) {
+		printf("(retr)*****\n");
+		printf("type is: ");
+		type_print(stdout, a->datatype);
+		printf("\n****\n");
+	}
+#endif
 
 	return(a);
 }
@@ -257,6 +450,8 @@ ast_free(struct ast *a)
 		ast_free(a->u.retr.body);
 		break;
 	}
+	if (a->sc != NULL)
+		scan_close(a->sc);
 	free(a);
 }
 
@@ -337,55 +532,58 @@ ast_dump(struct ast *a, int indent)
 	if (a->label != NULL) {
 		printf("@#%d -> ", a->label - (vm_label_t)program);
 	}
+	printf(ast_name(a));
+	printf("=");
+	type_print(stdout, a->datatype);
 	switch (a->type) {
 	case AST_LOCAL:
-		printf("local(%d,%d)=", a->u.local.index, a->u.local.upcount);
+		printf("(%d,%d)=", a->u.local.index, a->u.local.upcount);
 		if (a->u.local.sym != NULL)
 			symbol_dump(a->u.local.sym, 0);
 		printf("\n");
 		break;
 	case AST_VALUE:
-		printf("value(");
+		printf("(");
 		value_print(a->u.value.value);
 		printf(")\n");
 		break;
 	case AST_BUILTIN:
-		printf("builtin `%s`{\n", a->u.builtin.bi->name);
+		printf("`%s`{\n", a->u.builtin.bi->name);
 		ast_dump(a->u.builtin.right, indent + 1);
 		for (i = 0; i < indent; i++) printf("  "); printf("}\n");
 		break;
 	case AST_APPLY:
-		printf("apply {\n");
+		printf("{\n");
 		ast_dump(a->u.apply.left, indent + 1);
 		ast_dump(a->u.apply.right, indent + 1);
 		for (i = 0; i < indent; i++) printf("  "); printf("}\n");
 		break;
 	case AST_ARG:
-		printf("arg {\n");
+		printf("{\n");
 		ast_dump(a->u.arg.left, indent + 1);
 		ast_dump(a->u.arg.right, indent + 1);
 		for (i = 0; i < indent; i++) printf("  "); printf("}\n");
 		break;
 	case AST_ROUTINE:
-		printf("routine/%d (contains %d) {\n",
+		printf("/%d (contains %d) {\n",
 		    a->u.routine.arity, a->u.routine.cc);
 		ast_dump(a->u.routine.body, indent + 1);
 		for (i = 0; i < indent; i++) printf("  "); printf("}\n");
 		break;
 	case AST_STATEMENT:
-		printf("statement {\n");
+		printf("{\n");
 		ast_dump(a->u.statement.left, indent + 1);
 		ast_dump(a->u.statement.right, indent + 1);
 		for (i = 0; i < indent; i++) printf("  "); printf("}\n");
 		break;
 	case AST_ASSIGNMENT:
-		printf("assign {\n");
+		printf("{\n");
 		ast_dump(a->u.assignment.left, indent + 1);
 		ast_dump(a->u.assignment.right, indent + 1);
 		for (i = 0; i < indent; i++) printf("  "); printf("}\n");
 		break;
 	case AST_CONDITIONAL:
-		printf("conditional {\n"); /* a->u.conditional.index); */
+		printf("{\n");
 		ast_dump(a->u.conditional.test, indent + 1);
 		ast_dump(a->u.conditional.yes, indent + 1);
 		if (a->u.conditional.no != NULL)
@@ -393,13 +591,13 @@ ast_dump(struct ast *a, int indent)
 		for (i = 0; i < indent; i++) printf("  "); printf("}\n");
 		break;
 	case AST_WHILE_LOOP:
-		printf("while {\n");
+		printf("{\n");
 		ast_dump(a->u.while_loop.test, indent + 1);
 		ast_dump(a->u.while_loop.body, indent + 1);
 		for (i = 0; i < indent; i++) printf("  "); printf("}\n");
 		break;
 	case AST_RETR:
-		printf("retr {\n");
+		printf("{\n");
 		ast_dump(a->u.retr.body, indent + 1);
 		for (i = 0; i < indent; i++) printf("  "); printf("}\n");
 		break;

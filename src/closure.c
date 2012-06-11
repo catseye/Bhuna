@@ -9,12 +9,15 @@
 #include "activation.h"
 #include "vm.h"
 
+#include "type.h"
+
 struct closure *
 closure_new(struct ast *a, struct activation *ar)
 {
 	struct closure *c;
 
 	c = bhuna_malloc(sizeof(struct closure));
+
 	c->ast = a;
 	c->ar = ar;
 

@@ -48,6 +48,8 @@
 #include "dict.h"
 #include "closure.h"
 
+#include "type.h"
+
 #ifdef POOL_VALUES
 #include "pool.h"
 #endif
@@ -253,7 +255,7 @@ value_empty(struct value *v)
 
 /*** DESTRUCTOR ***/
 
-static void
+void
 value_free(struct value *v)
 {
 	if (v == NULL)
@@ -287,6 +289,7 @@ value_free(struct value *v)
 
 /*** REFCOUNTERS ***/
 
+#ifndef REFCOUNTING_MACROS
 void
 value_grab(struct value *v)
 {
@@ -322,6 +325,7 @@ value_release(struct value *v)
 	if (v->refcount == 0)
 		value_free(v);
 }
+#endif
 
 /*** SPECIFIC CONSTRUCTORS ***/
 
