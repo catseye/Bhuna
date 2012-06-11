@@ -1,10 +1,10 @@
 F = 19
 
-Foo = {
+Foo = ^{
  local F = 23
- print F
+ print F, EoL
 }
 
-Print F
+Print F, EoL
 Foo;
-Print F
+Print F, EoL

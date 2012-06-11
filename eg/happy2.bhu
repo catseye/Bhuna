@@ -1,5 +1,5 @@
-Foo = {
- Print Arg
-}
+//Foo = {
+// Print Arg
+//}
 
-Foo 19, 23, 76;
+//Foo 19, 23, 76;

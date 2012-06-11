@@ -127,7 +127,7 @@ value_new(int type)
 #else
 	v = bhuna_malloc(sizeof(struct value));
 #endif
-	bzero(v, sizeof(struct value));
+	/* bzero(v, sizeof(struct value)); */
 	v->type = type;
 	v->refcount = 1;
 
@@ -144,15 +144,14 @@ value_new(int type)
 /*** UNCONDITIONAL DUPLICATOR ***/
 
 /*
- * Returns a copy of the given value.
- * The copy is not so 'deep' as it could be, but should be OK w/refcounting.
+ * Returns a deep(-ish) copy of the given value.
  * New strings (char arrays) are created when copying a string;
  * New list spines (struct list *) are created, but values are only grabbed, not dup'ed.
  * Some things are not copied, only the pointers to them.
  *
  * Note that the dup'ed value is 'new', i.e. it has a refcount of 1.
  */
-static struct value *
+struct value *
 value_dup(struct value *v)
 {
 	struct value *n; /*  *z; */
@@ -171,6 +170,10 @@ value_dup(struct value *v)
 		for (l = v->v.l; l != NULL; l = l->next) {
 			value_list_append(&n, l->value);
 		}
+		/*
+		n = value_new(VALUE_LIST);
+		n->v.l = list_dup(v->v.l);
+		*/
 		return(n);
 	case VALUE_ERROR:
 		return(value_new_error(v->v.e));
@@ -178,11 +181,10 @@ value_dup(struct value *v)
 		return(value_new_builtin(v->v.bi));
 	case VALUE_CLOSURE:
 		/* XXX depth?? */
-		return(value_new_closure(v->v.k->ast, v->v.k->ar,
-		    v->v.k->arity, v->v.k->cc));
+		return(value_new_closure(v->v.k->ast, v->v.k->ar));
 	case VALUE_DICT:
-		n = value_new_dict();
-		/* XXX for each key in v->v.d, insert into n */
+		n = value_new(VALUE_DICT);
+		n->v.d = dict_dup(v->v.d);
 		return(n);
 	default:
 		return(value_new_error("unknown type"));
@@ -290,16 +292,16 @@ value_grab(struct value *v)
 {
 	if (v == NULL)
 		return;
-	assert(v->refcount > 0);
-	v->refcount++;
 #ifdef DEBUG
 	if (trace_refcounting > 1) {
-		printf("[RC] grabbed ");
+		printf("[RC] grabbing ");
 		value_print(v);
-		printf(", refcount now %d\n", v->refcount);
+		printf(", refcount now %d\n", v->refcount + 1);
 	}
 	num_vars_grabbed++;
 #endif
+	assert(v->refcount > 0);
+	v->refcount++;
 }
 
 void
@@ -307,16 +309,16 @@ value_release(struct value *v)
 {
 	if (v == NULL)
 		return;
-	assert(v->refcount > 0);
-	v->refcount--;
 #ifdef DEBUG
 	if (trace_refcounting > 1) {
-		printf("[RC] released ");
+		printf("[RC] releasing ");
 		value_print(v);
-		printf(", refcount now %d\n", v->refcount);
+		printf(", refcount now %d\n", v->refcount - 1);
 	}
 	num_vars_released++;
 #endif
+	assert(v->refcount > 0);
+	v->refcount--;
 	if (v->refcount == 0)
 		value_free(v);
 }
@@ -457,12 +459,12 @@ value_new_builtin(struct builtin *bi)
 }
 
 struct value *
-value_new_closure(struct ast *a, struct activation *ar, int arity, int cc)
+value_new_closure(struct ast *a, struct activation *ar)
 {
 	struct value *v;
 
 	v = value_new(VALUE_CLOSURE);
-	v->v.k = closure_new(a, ar, arity, cc);
+	v->v.k = closure_new(a, ar);
 
 #ifdef DEBUG
 	if (trace_valloc > 1) {
@@ -604,11 +606,10 @@ value_set_builtin(struct value **v, struct builtin *bi)
 }
 
 void
-value_set_closure(struct value **v, struct ast *a, struct activation *ar,
-		  int arity, int cc)
+value_set_closure(struct value **v, struct ast *a, struct activation *ar)
 {
 	if (*v == NULL) {
-		*v = value_new_closure(a, ar, arity, cc);
+		*v = value_new_closure(a, ar);
 		return;
 	}
 
@@ -616,7 +617,7 @@ value_set_closure(struct value **v, struct ast *a, struct activation *ar,
 	value_empty(*v);
 
 	(*v)->type = VALUE_CLOSURE;
-	(*v)->v.k = closure_new(a, ar, arity, cc);
+	(*v)->v.k = closure_new(a, ar);
 }
 
 void

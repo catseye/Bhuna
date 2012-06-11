@@ -1,6 +1,6 @@
-F = {
+F = ^{
   T = 123
-  Return { Return 17 }
+  Return ^{ Return 17 }
 }
 
 Print F, EoL

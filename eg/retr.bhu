@@ -1,0 +1,10 @@
+Fun = ^ A {
+  if A > 5
+    return A + 7
+  else {
+    return A - 2
+  }
+  Print "No!"
+}
+
+Print Fun(8)

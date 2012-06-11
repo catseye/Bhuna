@@ -7,7 +7,6 @@ Fib = ^ X {
 
 I = 1
 while I <= 25 {
-  Print Fib(I)
-  Print EoL
+  Print Fib(I), EoL
   I = I + 1
 }

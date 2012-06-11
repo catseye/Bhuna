@@ -1,4 +1,4 @@
-#define DEFAULT_GC_TRIGGER	10240
+#define DEFAULT_GC_TRIGGER	512
 
 struct value;
 
@@ -19,13 +19,16 @@ struct activation {
 	*/
 };
 
-struct activation	*activation_new(int, struct activation *, struct activation *);
-void			 activation_free(struct activation *);
+struct activation	*activation_new_on_heap(int, struct activation *, struct activation *);
+struct activation	*activation_new_on_stack(int, struct activation *, struct activation *);
+int			 activation_is_on_stack(struct activation *);
+void			 activation_free_from_heap(struct activation *);
+void			 activation_free_from_stack(struct activation *);
 
 struct value		*activation_get_value(struct activation *, int, int);
 void			 activation_set_value(struct activation *, int, int, struct value *);
+void			 activation_initialize_value(struct activation *, int, struct value *);
 
 void			 activation_dump(struct activation *, int);
 
-void			 activation_register(struct activation *);
 void			 activation_gc(void);

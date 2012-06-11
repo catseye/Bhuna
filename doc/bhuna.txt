@@ -1,12 +1,14 @@
 Program		::= {Statement}.
 Block		::= Statement | "{" {Statement} "}".
-Statement	::= (Control | Command | Assignment | Block) [";"].
+Statement	::= (Definition | Assignment | Command | Control | Block) [";"].
+
+Definition	::= {"local" | "const"} Var "=" Expr<0>.		[[1]]
+Assignment	::= Var {LAccessor} "=" Expr<0>.
+Command		::= Var {LAccessor} Expr<0> {"," Expr<0>}.
 
 Control		::= "if" Expr<0> Block ["else" Block]
-		  | "while" Expr<0> Block.
-
-Command		::= VarExpr Expr<0> {"," Expr<0>}
-Assignment	::= ["local"] VarExpr "=" Expr<0>.
+		  | "while" Expr<0> Block
+		  .
 
 Expr<N>		::= Expr<N+1> {Op<N> Expr<N+1>}.
 Expr<4>		::= Primitive.
@@ -18,20 +20,29 @@ Op<3>		::= "*" | "/" | "%".
 
 Primitive	::= "(" Expr<0> ")"
 		  | "!" Primitive
-		  | VarExpr
+		  | Var {RAccessor}
 		  | "^" {Var [","]} Block
-		  | FunName "(" [Expr<0> {"," Expr<0>}] ")"
 		  | "[" [Expr<0> {"," Expr<0>}] "]"
-		  | Literal.
+		  | Literal
+		  .
 
-Literal		::= 
-		  | <<symbol>>						[[3]]
-		  | <<number>>.
+Literal		::= <<symbol>>						[[3]]
+		  | <<number>>
+		  .
 
-VarExpr		::= Var {"[" Expr<0> "]"}.
 Var		::= <<symbol>>.						[[4]]
+
+LAccessor	::= "[" Expr<0> "]"
+		  | "." Literal
+		  .
+
+RAccessor	::= "[" Expr<0> "]"
+		  | "." Literal
+		  | "(" [Expr<0> {"," Expr<0>}] ")"
+		  .
 
 Footnotes:
 
+[[1]]:  Var must not itself be mentioned in the Expr<0>.
 [[3]]:	Must start with lowercase letter.
 [[4]]:	Must start with Uppercase letter.

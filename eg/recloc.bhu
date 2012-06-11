@@ -1,0 +1,8 @@
+Q = ^ A, B {
+  T = A - B
+  Print T, EoL
+  if T > 0
+    Q T, B
+}
+
+Q 10, 2

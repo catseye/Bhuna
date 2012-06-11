@@ -1,8 +1,10 @@
 A = ["moe","larry","curly"]
 
+Print A, EoL
+
 B = Index(A, 1)
 
-Print B
+Print B, EoL
 
 // B = [1,"hello","there"]
 // Print A, EoL
@@ -11,3 +13,5 @@ Print B
 // Print A, EoL
 // Print B, EoL
 
+C = List("moe", "larry", "curly")
+Print C

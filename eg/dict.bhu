@@ -1,0 +1,24 @@
+D = Dict(5, 123)
+
+Print "D=", D, EoL
+Print "D[5]=", D[5], EoL
+
+D[6] = 23
+
+Print "D=", D, EoL
+Print "D[6]=", D[6], EoL
+
+D[5] = 76
+Print "D[5]=", D[5], EoL
+
+R = D
+Print "R=", R, EoL
+Print "R[5]=", R[5], EoL
+R[5] = "maloney"
+Print "R=", R, EoL
+Print "R[5]=", R[5], EoL
+Print "D[5]=", D[5], EoL
+
+C = R[5]
+R[5] = 88
+Print "C=", C, ", R[5]=", R[5], EoL

@@ -71,6 +71,49 @@ dict_new(void)
 	return(d);
 }
 
+static struct chain *
+chain_dup(struct chain *f)
+{
+	struct chain *c, *n, *p = NULL, *h = NULL;
+
+	for (c = f; c != NULL; c = c->next) {
+		n = bhuna_malloc(sizeof(struct chain));
+
+		n->next = NULL;
+		value_grab(c->key);
+		n->key = c->key;
+		value_grab(c->value);
+		n->value = c->value;
+
+		if (h == NULL)
+			h = n;
+		else
+			p->next = n;
+
+		p = n;
+	}
+
+	return(h);
+}
+
+struct dict *
+dict_dup(struct dict *f)
+{
+	struct dict *d;
+	int i;
+
+	d = bhuna_malloc(sizeof(struct dict));
+	d->num_buckets = 31;
+	d->bucket = bhuna_malloc(sizeof(struct chain *) * d->num_buckets);
+	for (i = 0; i < d->num_buckets; i++) {
+		d->bucket[i] = chain_dup(f->bucket[i]);
+	}
+	d->cursor = NULL;    /* hmmm... dup'ing this would take trickery. */
+	d->cur_bucket = 0;
+
+	return(d);
+}
+
 /*** DESTRUCTORS ***/
 
 static void
@@ -117,10 +160,16 @@ hashpjw(struct value *key, size_t table_size) {
 	 * This is naff... for certain values this will work.
 	 * For others, it won't...
 	 */
-	for (p = (char *)key; p - (char *)key < sizeof(struct value); p++) {
-		h = (h << 4) + (*p);
-		if ((g = h & 0xf0000000))
-			h = (h ^ (g >> 24)) ^ g;
+	if (key->type == VALUE_INTEGER ||
+	    key->type == VALUE_BOOLEAN ||
+	    key->type == VALUE_ATOM) {
+		for (p = (char *)key; p - (char *)key < sizeof(int); p++) {
+			h = (h << 4) + (*p);
+			if ((g = h & 0xf0000000))
+				h = (h ^ (g >> 24)) ^ g;
+		}
+	} else {
+		assert("key no good" == NULL);
 	}
 	
 	return(h % table_size);
@@ -137,7 +186,6 @@ chain_new(struct value *key, struct value *value)
 	c = bhuna_malloc(sizeof(struct chain));
 
 	c->next = NULL;
-	/* XXX grab? */
 	c->key = key;
 	c->value = value;
 
@@ -172,7 +220,7 @@ dict_fetch(struct dict *d, struct value *k)
 
 	dict_locate(d, k, &i, &c);
 	if (c != NULL) {
-		/* XXX grab? */
+		value_grab(c->value);
 		return(c->value);
 	} else {
 		return(NULL);
@@ -191,12 +239,15 @@ dict_store(struct dict *d, struct value *k, struct value *v)
 	dict_locate(d, k, &i, &c);
 	if (c == NULL) {
 		/* Chain does not exist, add a new one. */
+		value_grab(k);
+		value_grab(v);
 		c = chain_new(k, v);
 		c->next = d->bucket[i];
 		d->bucket[i] = c;
 	} else {
 		/* Chain already exists, replace the value. */
 		value_release(c->value);
+		value_grab(v);
 		c->value = v;
 	}
 }

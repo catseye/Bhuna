@@ -18,6 +18,16 @@ list_cons(struct list **l, struct value *v)
 	*l = n;
 }
 
+struct list *
+list_dup(struct list *l)
+{
+	struct list *n;
+
+	/* ... XXX ... */
+
+	return(n);
+}
+
 void
 list_free(struct list **l)
 {

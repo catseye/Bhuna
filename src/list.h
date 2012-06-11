@@ -10,11 +10,12 @@ struct list {
 	struct value		*value;
 };
 
-void	list_cons(struct list **, struct value *);
-void	list_free(struct list **);
-size_t	list_length(struct list *);
-int	list_contains(struct list *, struct value *);
+void		 list_cons(struct list **, struct value *);
+struct list	*list_dup(struct list *);
+void		 list_free(struct list **);
+size_t		 list_length(struct list *);
+int		 list_contains(struct list *, struct value *);
 
-void	list_dump(struct list *);
+void		 list_dump(struct list *);
 
 #endif /* !__LIST_H_ */

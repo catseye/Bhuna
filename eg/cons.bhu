@@ -6,6 +6,18 @@
 // Z = Y + 7
 // X = [1, Z * Y, 3]
 
+X = []
+
+Print X, EoL
+
+X = [1]
+
+Print X, EoL
+
+X = [1, 2]
+
+Print X, EoL
+
 X = [1, 2, 3]
 
-Print X
+Print X, EoL

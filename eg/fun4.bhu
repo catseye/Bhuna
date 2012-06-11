@@ -1,8 +1,6 @@
-F = {
-  Level = Index(Arg, 1)
+F = ^ Level {
   Print "Level is ", Level, EoL
-  Q = {
-    QLev = Index(Arg, 1)
+  Q = ^ QLev {
     Print "QLev is ", QLev, EoL
     Print "(And Q thinks Level is ", Level, ")", EoL
     if (QLev < 3)
@@ -14,8 +12,8 @@ F = {
     F Level + 1
   } else {
     Print "At level three, woo!", EoL
-    Q(0)
+    Q 0
   }
 }
 
-F(0)
+F 0

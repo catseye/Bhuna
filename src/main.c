@@ -26,6 +26,7 @@ int trace_refcounting = 0;
 int trace_closures = 0;
 int trace_vm = 0;
 int trace_gen = 0;
+int trace_pool = 0;
 
 int num_vars_created = 0;
 int num_vars_grabbed = 0;
@@ -39,7 +40,7 @@ int activations_freed = 0;
 #endif
 
 #ifdef DEBUG
-#define OPTS "acfg:klmnoprstvxz"
+#define OPTS "acdfg:klmnoprstvxz"
 #define RUN_PROGRAM run_program
 #else
 #define OPTS "g:x"
@@ -59,6 +60,7 @@ usage(char **argv)
 #ifdef DEBUG
 	fprintf(stderr, "  -a: trace assignments\n");
 	fprintf(stderr, "  -c: trace calls\n");
+	fprintf(stderr, "  -d: trace pooling\n");
 	fprintf(stderr, "  -f: trace frames\n");
 #endif
 	fprintf(stderr, "  -g int: set garbage collection threshold\n");
@@ -91,11 +93,11 @@ load_builtins(struct symbol_table *stab, struct builtin *b)
 	for (i = 0; b[i].name != NULL; i++) {
 		v = value_new_builtin(&b[i]);
 		sym = symbol_define(stab, b[i].name, SYM_KIND_COMMAND, v);
-		sym->is_pure = b[i].purity;
+		sym->is_pure = b[i].is_pure;
 		sym->builtin = &b[i];
 		value_release(v);
 	}
-	
+
 	/* XXX */
 	v = value_new_string("\n");
 	sym = symbol_define(stab, "EoL", SYM_KIND_VARIABLE, v);
@@ -117,7 +119,6 @@ main(int argc, char **argv)
 	struct scan_st *sc;
 	struct symbol_table *stab;
 	struct ast *a;
-	struct value *v;
 	char *source = NULL;
 	int opt;
 	int use_vm = 0;
@@ -151,6 +152,9 @@ main(int argc, char **argv)
 			break;
 		case 'c':
 			trace_calls++;
+			break;
+		case 'd':
+			trace_pool++;
 			break;
 		case 'f':
 			debug_frame++;
@@ -216,8 +220,7 @@ main(int argc, char **argv)
 	gc_target = gc_trigger;
 	if ((sc = scan_open(source)) != NULL) {
 		stab = symbol_table_new(NULL, 0);
-		global_ar = activation_new(100, NULL, NULL);
-		activation_register(global_ar);
+		global_ar = activation_new_on_stack(100, NULL, NULL);
 		load_builtins(stab, builtins);
 		a = parse_program(sc, stab);
 		scan_close(sc);
@@ -236,9 +239,12 @@ main(int argc, char **argv)
 			unsigned char *program;
 
 			program = ast_gen(a);
+			/* ast_dump(a, 0); */
 			if (RUN_PROGRAM) {
 				vm_run(program);
 			}
+			vm_release(program);
+			/*value_dump_global_table();*/
 #ifdef RECURSIVE_AST_EVALUATOR
 		} else if (sc->errors == 0 && RUN_PROGRAM) {
 			v = value_new_integer(76);
@@ -253,7 +259,7 @@ main(int argc, char **argv)
 #endif
 		ast_free(a);
 		activation_gc();
-		activation_free(global_ar);
+		activation_free_from_stack(global_ar);
 #ifdef DEBUG
 		symbol_table_free(stab);
 		if (trace_refcounting > 0) {

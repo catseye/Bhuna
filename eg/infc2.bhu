@@ -1,6 +1,6 @@
-F = {
+F = ^{
   Q = 17
-  Return { T = 0 Print Q }
+  Return ^{ T = 0 Print Q, EoL }
 }
 
 X = 10

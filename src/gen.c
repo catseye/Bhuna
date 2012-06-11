@@ -14,7 +14,7 @@
 extern int trace_gen;
 
 static vm_label_t gptr;
-static unsigned char program[65536];
+unsigned char program[65536];
 
 vm_label_t patch_stack[4096];
 int psp = 0;
@@ -70,6 +70,7 @@ gen_push_value(struct value *v)
 #endif
 
 	gen(INSTR_PUSH_VALUE);
+	value_grab(v);
 	*(((struct value **)gptr)++) = v;
 }
 
@@ -184,18 +185,23 @@ gen_ret(void)
 }
 
 static void
-gen_set_activation_bp(int *bpid)
+gen_set_activation(void)
 {
 #ifdef DEBUG
 	if (trace_gen)
-		printf("#%d: *SET_ACTIVATION", gptr - program);
+		printf("#%d: *SET_ACTIVATION\n", gptr - program);
 #endif
 	gen(INSTR_SET_ACTIVATION);
-	*bpid = request_backpatch(&gptr);
+}
+
+static void
+gen_deep_copy(void)
+{
 #ifdef DEBUG
 	if (trace_gen)
-		printf("($%d)\n", *bpid);
+		printf("#%d: *DEEP_COPY\n", gptr - program);
 #endif
+	gen(INSTR_DEEP_COPY);
 }
 
 static void
@@ -203,10 +209,12 @@ ast_gen_r(struct ast *a)
 {
 	int bpid_1, bpid_2;
 	vm_label_t label;
+	struct value *v;
 
 	if (a == NULL)
 		return;
 
+	a->label = gptr;
 	switch (a->type) {
 	case AST_LOCAL:
 		gen_push_local(a->u.local.index, a->u.local.upcount);
@@ -214,23 +222,29 @@ ast_gen_r(struct ast *a)
 	case AST_VALUE:
 		gen_push_value(a->u.value.value);
 		if (a->u.value.value->type == VALUE_CLOSURE) {
-			gen_set_activation_bp(&bpid_1);
-			gen_jmp_bp(&bpid_2);
-			backpatch(bpid_1);
+			gen_set_activation();
+			gen_jmp_bp(&bpid_1);
 			ast_gen_r(a->u.value.value->v.k->ast);
 			gen_ret();
-			backpatch(bpid_2);
+			backpatch(bpid_1);
 		}
 		break;
 	case AST_BUILTIN:
-		ast_gen_r(a->u.builtin.left);
 		ast_gen_r(a->u.builtin.right);
+		if (a->u.builtin.bi->arity == -1) {
+			v = value_new_integer(ast_count_args(a->u.builtin.right));
+			gen_push_value(v);
+			value_release(v);
+		}
 		gen_builtin(a->u.builtin.bi);
 		break;
 	case AST_APPLY:
 		ast_gen_r(a->u.apply.right);
 		ast_gen_r(a->u.apply.left);
 		gen_apply();
+		break;
+	case AST_ROUTINE:
+		ast_gen_r(a->u.routine.body);
 		break;
 	case AST_ARG:
 		ast_gen_r(a->u.arg.left);
@@ -244,6 +258,7 @@ ast_gen_r(struct ast *a)
 		assert(a->u.assignment.left != NULL);
 		assert(a->u.assignment.left->type == AST_LOCAL);
 		ast_gen_r(a->u.assignment.right);
+		gen_deep_copy();
 		gen_pop_local(a->u.assignment.left->u.local.index,
 		    a->u.assignment.left->u.local.upcount);
 		break;

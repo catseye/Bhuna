@@ -1,10 +1,10 @@
 
-F = {
-  Print "hello!"
+F = ^{
+  Print "hello!", EoL
 }
 
-G = {
-  Print "naff!"
+G = ^{
+  Print "naff!", EoL
 }
 
 H = G		// does not dup the AST...

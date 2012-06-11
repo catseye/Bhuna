@@ -1,17 +1,8 @@
 F = ^ M,N {
-  Print "Hello from F"
-  Print EoL
-  Print M
-  Print EoL
-  Print N
-  Print EoL
-  Print "Goodbye from F"
-  Print EoL
+  Print "Hello from F", EoL, M, EoL, N, Eol, "Goodbye from F", EoL
   return M + N
 }
 
 G = F(19, 23)
-Print "Result is: "
-Print G
-Print EoL
+Print "Result is: ", G, EoL
 

@@ -1,0 +1,25 @@
+Stack = ^ Size {
+  S = [1,2,3,4,5,6,7]
+  SP = 1
+  
+  Push = ^ E {
+    //S[SP] = E
+    Store S, SP, E
+    SP = SP + 1
+  }
+
+  Pop = ^ {
+    SP = SP - 1
+    return S[SP]
+  }
+
+  return ^{}
+}
+
+Q = Stack(256)
+
+Print Q.1, EoL
+Print Q.2, EoL
+Print Q.3, EoL
+Print Q.4, EoL
+Print Q.5, EoL

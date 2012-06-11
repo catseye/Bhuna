@@ -8,8 +8,8 @@ struct builtin {
 	char *name;
 	void (*fn)(struct activation *, struct value **);
 	int arity;
-	int purity;
-	int constness;
+	int is_pure;
+	int is_const;
 	int index;
 };
 
@@ -28,8 +28,10 @@ struct builtin {
 #define INDEX_BUILTIN_MUL	12
 #define INDEX_BUILTIN_DIV	13
 #define INDEX_BUILTIN_MOD	14
-#define INDEX_BUILTIN_CONS	15
-#define INDEX_BUILTIN_INDEX	16
+#define INDEX_BUILTIN_LIST	15
+#define INDEX_BUILTIN_FETCH	16
+#define INDEX_BUILTIN_STORE	17
+#define INDEX_BUILTIN_DICT	18
 
 #define	INDEX_BUILTIN_LAST	127
 
@@ -54,7 +56,10 @@ void builtin_sub(struct activation *, struct value **);
 void builtin_div(struct activation *, struct value **);
 void builtin_mod(struct activation *, struct value **);
 
-void builtin_cons(struct activation *, struct value **);
-void builtin_index(struct activation *, struct value **);
+void builtin_list(struct activation *, struct value **);
+void builtin_fetch(struct activation *, struct value **);
+void builtin_store(struct activation *, struct value **);
+
+void builtin_dict(struct activation *, struct value **);
 
 #endif

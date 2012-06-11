@@ -1,6 +1,5 @@
 
-R = {
-  P = Arg[1]
+R = ^ P {
   Print "P is ", P, EoL
   if (P > 0) R P - 1
   Print "P is still ", P, EoL

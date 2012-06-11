@@ -1,7 +1,7 @@
-G = {
+G = ^{
   Q = "hello"
-  F = {
-    Print Q
+  F = ^{
+    Print Q, EoL
   }
   F
 }

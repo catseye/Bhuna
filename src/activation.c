@@ -25,8 +25,13 @@ extern int gc_target;
 static struct activation *a_head = NULL;
 static int a_count = 0;
 
+#define A_STACK_SIZE	65536
+
+unsigned char a_stack[A_STACK_SIZE];
+unsigned char *a_sp = a_stack;
+
 struct activation *
-activation_new(int size, struct activation *caller, struct activation *enclosing)
+activation_new_on_heap(int size, struct activation *caller, struct activation *enclosing)
 {
 	struct activation *a;
 
@@ -59,16 +64,22 @@ activation_new(int size, struct activation *caller, struct activation *enclosing
 
 	a = bhuna_malloc(sizeof(struct activation) +
 	    sizeof(struct value *) * size);
-	bzero(a, sizeof(struct activation) +
-	    sizeof(struct value *) * size);
+	/*bzero(a, sizeof(struct activation) +
+	    sizeof(struct value *) * size);*/
 	a->size = size;
 	a->caller = caller;
 	a->enclosing = enclosing;
 	a->marked = 0;
 
+	/*
+	 * Link up to our GC list.
+	 */
+	a->next = a_head;
+	a_head = a;
+
 #ifdef DEBUG
 	if (trace_activations > 1) {
-		printf("[ARC] created ");
+		printf("[ARC] created on HEAP");
 		activation_dump(a, -1);
 		printf("\n");
 	}
@@ -79,31 +90,76 @@ activation_new(int size, struct activation *caller, struct activation *enclosing
 	return(a);
 }
 
-void
-activation_register(struct activation *a)
+struct activation *
+activation_new_on_stack(int size, struct activation *caller, struct activation *enclosing)
 {
-	a->next = a_head;
-	a_head = a;
+	struct activation *a;
+
+	a = (struct activation *)a_sp;
+	a_sp += sizeof(struct activation) + sizeof(struct value *) * size;
+
+	a->size = size;
+	a->caller = caller;
+	a->enclosing = enclosing;
+
+#ifdef DEBUG
+	if (trace_activations > 1) {
+		printf("[ARC] created on STACK ");
+		activation_dump(a, -1);
+		printf("\n");
+	}
+	activations_allocated++;
+#endif
+
+	return(a);
 }
 
 void
-activation_free(struct activation *a)
+activation_free_from_heap(struct activation *a)
 {
 	int i;
 
 #ifdef DEBUG
 	if (trace_activations > 1) {
-		printf("[ARC] freeing ");
+		printf("[ARC] freeing from HEAP ");
 		activation_dump(a, -1);
 		printf("\n");
 	}
 	activations_freed++;
 #endif
+
 	for (i = 0; i < a->size; i++)
 		value_release(VALARY(a, i));
 
 	bhuna_free(a);
 	a_count--;
+}
+
+int
+activation_is_on_stack(struct activation *a)
+{
+	return ((unsigned char *)a >= a_stack &&
+		(unsigned char *)a < (a_stack + A_STACK_SIZE));
+}
+
+void
+activation_free_from_stack(struct activation *a)
+{
+	int i;
+
+#ifdef DEBUG
+		if (trace_activations > 1) {
+			printf("[ARC] freeing from STACK ");
+			activation_dump(a, -1);
+			printf("\n");
+		}
+		activations_freed++;
+#endif
+
+	for (i = 0; i < a->size; i++)
+		value_release(VALARY(a, i));
+
+	a_sp -= (sizeof(struct activation) + sizeof(struct value *) * a->size);
 }
 
 struct value *
@@ -144,6 +200,16 @@ activation_set_value(struct activation *a, int index, int upcount,
 }
 
 void
+activation_initialize_value(struct activation *a, int index,
+			    struct value *v)
+{
+	assert(a != NULL);
+	assert(index < a->size);
+	value_grab(v);
+	VALARY(a, index) = v;
+}
+
+void
 activation_dump(struct activation *a, int detail)
 {
 #ifdef DEBUG
@@ -159,7 +225,11 @@ activation_dump(struct activation *a, int detail)
 	if (detail > 0) {
 		for (i = 0; i < a->size; i++) {
 			printf(" ");
-			value_print(VALARY(a, i));
+			if (VALARY(a, i) != NULL && VALARY(a, i)->type == VALUE_CLOSURE) {
+				printf("(closure) ");
+			} else {
+				value_print(VALARY(a, i));
+			}
 		}
 	}
 	
@@ -268,7 +338,7 @@ activation_gc(void)
 				printf("\n");
 			}
 #endif
-			activation_free(a);
+			activation_free_from_heap(a);
 		}
 	}
 

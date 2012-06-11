@@ -6,21 +6,35 @@
 #include "list.h"
 #include "value.h"
 #include "builtin.h"
+#include "activation.h"
+#include "vm.h"
 
 #ifdef DEBUG
 #include "symbol.h"
 #endif
 
+extern unsigned char program[];
+
 /***** constructors *****/
+
+struct ast *
+ast_new(int type)
+{
+	struct ast *a;
+
+	a = malloc(sizeof(struct ast));
+	a->type = type;
+	a->label = NULL;
+
+	return(a);
+}
 
 struct ast *
 ast_new_local(int index, int upcount, void *sym)
 {
 	struct ast *a;
 
-	a = malloc(sizeof(struct ast));
-	a->type = AST_LOCAL;
-
+	a = ast_new(AST_LOCAL);
 	a->u.local.index = index;
 	a->u.local.upcount = upcount;
 #ifdef DEBUG
@@ -35,9 +49,7 @@ ast_new_value(struct value *v)
 {
 	struct ast *a;
 
-	a = malloc(sizeof(struct ast));
-	a->type = AST_VALUE;
-
+	a = ast_new(AST_VALUE);
 	value_grab(v);
 	a->u.value.value = v;
 
@@ -45,16 +57,45 @@ ast_new_value(struct value *v)
 }
 
 struct ast *
-ast_new_builtin(struct ast *left, struct ast *right, struct builtin *bi)
+ast_new_builtin(struct builtin *bi, struct ast *right)
 {
 	struct ast *a;
 
-	a = malloc(sizeof(struct ast));
-	a->type = AST_BUILTIN;
+	/*
+	 * Fold constants.
+	 */
+	if (bi->is_pure && ast_is_constant(right)) {
+		struct value *v = NULL;
+		struct activation *ar;
+		struct ast *g;
+		int i = 0;
+		int varity;
 
-	a->u.builtin.left = left;
-	a->u.builtin.right = right;
+		if (bi->arity == -1) {
+			varity = ast_count_args(right);
+		} else {
+			varity = bi->arity;
+		}
+		ar = activation_new_on_stack(varity, NULL, NULL);
+		for (g = right, i = 0;
+		     g != NULL && g->type == AST_ARG && i < varity;
+		     g = g->u.arg.right, i++) {
+			if (g->u.arg.left != NULL)
+				activation_initialize_value(ar, i,
+				     g->u.arg.left->u.value.value);
+		}
+		bi->fn(ar, &v);
+		activation_free_from_stack(ar);
+		a = ast_new_value(v);
+		value_release(v);
+
+		return(a);
+	}
+
+	a = ast_new(AST_BUILTIN);
+
 	a->u.builtin.bi = bi;
+	a->u.builtin.right = right;
 
 	return(a);
 }
@@ -64,9 +105,7 @@ ast_new_apply(struct ast *fn, struct ast *args, int is_pure)
 {
 	struct ast *a;
 
-	a = malloc(sizeof(struct ast));
-	a->type = AST_APPLY;
-
+	a = ast_new(AST_APPLY);
 	a->u.apply.left = fn;
 	a->u.apply.right = args;
 	a->u.apply.is_pure = is_pure;
@@ -79,11 +118,23 @@ ast_new_arg(struct ast *left, struct ast *right)
 {
 	struct ast *a;
 
-	a = malloc(sizeof(struct ast));
-	a->type = AST_ARG;
-
+	a = ast_new(AST_ARG);
 	a->u.arg.left = left;
 	a->u.arg.right = right;
+
+	return(a);
+}
+
+struct ast *
+ast_new_routine(int arity, int locals, int cc, struct ast *body)
+{
+	struct ast *a;
+
+	a = ast_new(AST_ROUTINE);
+	a->u.routine.arity = arity;
+	a->u.routine.locals = locals;
+	a->u.routine.cc = cc;
+	a->u.routine.body = body;
 
 	return(a);
 }
@@ -100,9 +151,7 @@ ast_new_statement(struct ast *left, struct ast *right)
 	if (right == NULL)
 		return(left);
 
-	a = malloc(sizeof(struct ast));
-	a->type = AST_STATEMENT;
-
+	a = ast_new(AST_STATEMENT);
 	a->u.statement.left = left;
 	a->u.statement.right = right;
 
@@ -114,9 +163,7 @@ ast_new_assignment(struct ast *left, struct ast *right)
 {
 	struct ast *a;
 
-	a = malloc(sizeof(struct ast));
-	a->type = AST_ASSIGNMENT;
-
+	a = ast_new(AST_ASSIGNMENT);
 	a->u.assignment.left = left;
 	a->u.assignment.right = right;
 
@@ -128,13 +175,10 @@ ast_new_conditional(struct ast *test, struct ast *yes, struct ast *no)
 {
 	struct ast *a;
 
-	a = malloc(sizeof(struct ast));
-	a->type = AST_CONDITIONAL;
-
+	a = ast_new(AST_CONDITIONAL);
 	a->u.conditional.test = test;
 	a->u.conditional.yes = yes;
 	a->u.conditional.no = no;
-	/*a->u.conditional.index = index;*/
 
 	return(a);
 }
@@ -158,13 +202,13 @@ ast_new_retr(struct ast *body)
 {
 	struct ast *a;
 
-	a = malloc(sizeof(struct ast));
-	a->type = AST_RETR;
-
+	a = ast_new(AST_RETR);
 	a->u.retr.body = body;
 
 	return(a);
 }
+
+/*** DESTRUCTOR ***/
 
 void
 ast_free(struct ast *a)
@@ -179,8 +223,7 @@ ast_free(struct ast *a)
 		value_release(a->u.value.value);
 		break;
 	case AST_BUILTIN:
-		ast_free(a->u.apply.left);
-		ast_free(a->u.apply.right);
+		ast_free(a->u.builtin.right);
 		break;
 	case AST_APPLY:
 		ast_free(a->u.apply.left);
@@ -189,6 +232,9 @@ ast_free(struct ast *a)
 	case AST_ARG:
 		ast_free(a->u.arg.left);
 		ast_free(a->u.arg.right);
+		break;
+	case AST_ROUTINE:
+		ast_free(a->u.routine.body);
 		break;
 	case AST_STATEMENT:
 		ast_free(a->u.statement.left);
@@ -214,6 +260,36 @@ ast_free(struct ast *a)
 	free(a);
 }
 
+/*** PREDICATES &c. ***/
+
+int
+ast_is_constant(struct ast *a)
+{
+	if (a == NULL)
+		return(1);
+	switch (a->type) {
+	case AST_VALUE:
+		return(1);
+	case AST_ARG:
+		return(ast_is_constant(a->u.arg.left) &&
+		       ast_is_constant(a->u.arg.right));
+	}
+	return(0);
+}
+
+int
+ast_count_args(struct ast *a)
+{
+	int ac;
+
+	for (ac = 0; a != NULL && a->type == AST_ARG; a = a->u.arg.right, ac++)
+		;
+
+	return(ac);
+}
+
+/*** DEBUGGING ***/
+
 char *
 ast_name(struct ast *a)
 {
@@ -231,6 +307,8 @@ ast_name(struct ast *a)
 		return("AST_APPLY");
 	case AST_ARG:
 		return("AST_ARG");
+	case AST_ROUTINE:
+		return("AST_ROUTINE");
 	case AST_STATEMENT:
 		return("AST_STATEMENT");
 	case AST_ASSIGNMENT:
@@ -256,6 +334,9 @@ ast_dump(struct ast *a, int indent)
 		return;
 	}
 	for (i = 0; i < indent; i++) printf("  ");
+	if (a->label != NULL) {
+		printf("@#%d -> ", a->label - (vm_label_t)program);
+	}
 	switch (a->type) {
 	case AST_LOCAL:
 		printf("local(%d,%d)=", a->u.local.index, a->u.local.upcount);
@@ -270,7 +351,6 @@ ast_dump(struct ast *a, int indent)
 		break;
 	case AST_BUILTIN:
 		printf("builtin `%s`{\n", a->u.builtin.bi->name);
-		ast_dump(a->u.builtin.left, indent + 1);
 		ast_dump(a->u.builtin.right, indent + 1);
 		for (i = 0; i < indent; i++) printf("  "); printf("}\n");
 		break;
@@ -284,6 +364,12 @@ ast_dump(struct ast *a, int indent)
 		printf("arg {\n");
 		ast_dump(a->u.arg.left, indent + 1);
 		ast_dump(a->u.arg.right, indent + 1);
+		for (i = 0; i < indent; i++) printf("  "); printf("}\n");
+		break;
+	case AST_ROUTINE:
+		printf("routine/%d (contains %d) {\n",
+		    a->u.routine.arity, a->u.routine.cc);
+		ast_dump(a->u.routine.body, indent + 1);
 		for (i = 0; i < indent; i++) printf("  "); printf("}\n");
 		break;
 	case AST_STATEMENT:
@@ -319,48 +405,4 @@ ast_dump(struct ast *a, int indent)
 		break;
 	}
 #endif
-}
-
-int
-ast_is_constant(struct ast *a)
-{
-	if (a == NULL) {
-		return(1);
-	}
-	switch (a->type) {
-	case AST_LOCAL:
-		return(0);
-	case AST_VALUE:
-		return(1);
-	case AST_BUILTIN:
-		return(a->u.builtin.bi->purity &&
-		       ast_is_constant(a->u.builtin.left) &&
-		       ast_is_constant(a->u.builtin.right));
-	case AST_APPLY:
-		return(a->u.apply.is_pure &&
-		       ast_is_constant(a->u.apply.left) &&
-		       ast_is_constant(a->u.apply.right));
-	case AST_ARG:
-		return(ast_is_constant(a->u.arg.left) &&
-		       ast_is_constant(a->u.arg.right));
-	case AST_STATEMENT:
-		return(ast_is_constant(a->u.statement.left) &&
-		       ast_is_constant(a->u.statement.right));
-	case AST_ASSIGNMENT:
-		return(0);
-		/*
-		return(ast_is_constant(a->u.assignment.left) &&
-		       ast_is_constant(a->u.assignment.right));
-		*/
-	case AST_CONDITIONAL:
-		return(ast_is_constant(a->u.conditional.test) &&
-		       ast_is_constant(a->u.conditional.yes) &&
-		       ast_is_constant(a->u.conditional.no));
-	case AST_WHILE_LOOP:
-		return(ast_is_constant(a->u.while_loop.test) &&
-		       ast_is_constant(a->u.while_loop.body));
-	case AST_RETR:
-		return(ast_is_constant(a->u.retr.body));
-	}
-	return(0);
 }

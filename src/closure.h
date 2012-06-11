@@ -8,13 +8,10 @@ struct ast;
 
 struct closure {
 	struct ast		*ast;
-	vm_label_t		 label;
 	struct activation	*ar;	/* env in which we were created */
-	int			 arity;	/* takes this many arguments */
-	int			 cc;	/* contains this many sub-closures */
 };
 
-struct closure	*closure_new(struct ast *, struct activation *, int, int);
+struct closure	*closure_new(struct ast *, struct activation *);
 void		 closure_free(struct closure *);
 void		 closure_dump(struct closure *);
 

@@ -57,6 +57,7 @@ struct chain {
 };
 
 struct dict		*dict_new(void);
+struct dict		*dict_dup(struct dict *);
 void			 dict_free(struct dict *);
 
 struct value		*dict_fetch(struct dict *, struct value *);

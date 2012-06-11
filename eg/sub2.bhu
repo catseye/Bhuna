@@ -1,8 +1,5 @@
 Sub = ^ A, B, C {
-  Print "hello from Sub"
-  Print A
-  Print B
-  Print C
+  Print "hello from Sub, A=", A, ", B=", B, ", C=", C
 }
 
 Sub "A", "B", "C"

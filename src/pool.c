@@ -7,7 +7,7 @@
 static struct value_pool *current_vp = NULL;
 static struct pooled_value *pv_free = NULL;
 
-int trace_pool = 1;
+extern int trace_pool;
 
 void
 value_pool_new(void)
@@ -16,7 +16,7 @@ value_pool_new(void)
 	int i;
 
 #ifdef DEBUG
-	if (trace_pool) {
+	if (trace_pool > 0) {
 		printf("MAKING NEW POOL\n");
 		printf("value size        = %4d\n", sizeof(struct value));
 		printf("pooled-value size = %4d\n", sizeof(struct pooled_value));
@@ -67,7 +67,12 @@ value_allocate(void)
 	r = &(pv_free->pv.v);
 	pv_free = pv_free->pv.free;
 
-	/*printf("pool: allocate: next free now %08lx\n", pv_free);*/
+#ifdef DEBUG
+	if (trace_pool > 1) {
+		printf("pool: allocate: next free now %08lx\n",
+		    (unsigned long)pv_free);
+	}
+#endif
 	return(r);
 }
 
@@ -79,5 +84,10 @@ value_deallocate(struct value *v)
 	 */
 	((struct pooled_value *)v)->pv.free = pv_free;
 	pv_free = (struct pooled_value *)v;
-	printf("pool: deallocate: next free now %08lx\n", (unsigned long)pv_free);
+#ifdef DEBUG
+	if (trace_pool > 1) {
+		printf("pool: deallocate: next free now %08lx\n",
+		    (unsigned long)pv_free);
+	}
+#endif
 }

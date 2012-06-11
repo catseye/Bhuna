@@ -1,6 +1,5 @@
 Sub = ^ {
-  Print "hello from Sub"
-  Print EoL
+  Print "hello from Sub", EoL
 }
 
 Sub

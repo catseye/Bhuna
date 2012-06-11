@@ -1,11 +1,10 @@
-F = {
-  C = Index(Arg, 1)
-  C Index(Arg, 2)
+F = ^ C, D {
+  C D
   C "cheese"
 }
 
-R = {
-  Print "R was called with ", Index(Arg, 1), EoL
+R = ^ C {
+  Print "R was called with ", C, EoL
 }
 
 F R, "Spam Spam Spam Spam wonderful Spam!"

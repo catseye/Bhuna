@@ -1,0 +1,10 @@
+A = ["moe", "larry", 76]
+
+Print A, EoL
+Print A[2], EoL
+
+Store A, 2, [5, 6, 7]
+Print A, EoL
+
+Store A[2], 3, "XXX"
+Print A, EoL

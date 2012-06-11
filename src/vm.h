@@ -15,8 +15,10 @@ typedef	unsigned char *	vm_label_t;
 #define	INSTR_RET		135
 #define INSTR_GOTO		136
 #define	INSTR_SET_ACTIVATION	137
+#define	INSTR_DEEP_COPY		138
 
 vm_label_t	 ast_gen(struct ast *);
 void		 vm_run(vm_label_t);
+void		 vm_release(vm_label_t);
 
 #endif

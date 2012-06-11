@@ -1,6 +1,6 @@
-F = {
+F = ^{
   Q = 17
-  G = {
+  G = ^{
     Print "Q is ", Q, EoL
   }
   G;

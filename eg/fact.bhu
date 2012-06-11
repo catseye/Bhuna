@@ -5,4 +5,4 @@ Fact = ^ X {
     return 1
 }
 
-Print Fact(6)
+Print Fact(6), EoL

@@ -2,7 +2,7 @@ const Peter = 6
 const Paul = 23
 const Mary = 10 * Peter
 Jim = 14
-const Earl = Jim * 8
+// const Earl = Jim * 8
 // Print Peter
 // Print Paul
 Print Mary

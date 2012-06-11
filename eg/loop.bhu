@@ -1,7 +1,6 @@
 X = 10
 while X > 0 {
-  Print X
-  Print EoL
+  Print X, EoL
   X = X - 1
 }
 

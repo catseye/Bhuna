@@ -1,0 +1,7 @@
+A = [1, 3, "boo"]
+
+Print A, EoL
+A[1] = ["frank", "dr_forrester", "joel"]
+Print A, EoL
+A[1][A[2]] = "mike"
+Print A, EoL
