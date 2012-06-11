@@ -290,7 +290,7 @@ vm_run(struct vm *vm, int xmax)
 		case INDEX_BUILTIN_SUB:
 			POP_VALUE(r);
 			POP_VALUE(l);
-			//subs++;
+			/* subs++; */
 			if (l.type == VALUE_INTEGER && r.type == VALUE_INTEGER) {
 				v = value_new_integer(l.v.i - r.v.i);
 			} else {

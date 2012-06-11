@@ -2,7 +2,7 @@
 #CFLAGS+=-DPOOL_VALUES 
 CFLAGS+=-DHASH_CONSING
 CFLAGS+=-DINLINE_BUILTINS
-CFLAGS+=-Wall
+CFLAGS+=-Wall -ansi
 
 #-I/usr/local/include
 

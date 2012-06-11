@@ -1,7 +1,8 @@
-#ifdef POOL_VALUES
 #include <assert.h>
 #include <stdlib.h>
 #include <stdio.h>
+
+#ifdef POOL_VALUES
 
 #include "pool.h"
 

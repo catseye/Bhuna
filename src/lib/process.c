@@ -8,8 +8,7 @@
 #include "ast.h"
 #include "activation.h"
 
-#define TIMESLICE	2048
-// 4096
+#define TIMESLICE	2048 /* 4096 */
 extern int trace_scheduling;
 
 struct process		*current_process = NULL;
