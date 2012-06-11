@@ -1,0 +1,8 @@
+A = 1
+T = A
+T = 2
+Print "A=",A," T=",T, EoL
+A = 57
+Print "A=",A," T=",T, EoL
+T = 1
+Print "A=",A," T=",T, EoL

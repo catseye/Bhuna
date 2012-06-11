@@ -1,0 +1,15 @@
+A = [1, 2, 3]
+B = A
+
+PrintAB = ^ {
+  Print "A = ", A, EoL
+  Print "B = ", B, EoL
+}
+
+PrintAB;
+
+B[2] = ["zing", "zang", "bar"]
+PrintAB;
+
+B[2][2] = "foo"
+PrintAB;

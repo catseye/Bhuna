@@ -1,0 +1,13 @@
+F = ^ {
+  I = 10
+  while I > 0 {
+    Print "F was spawned!", EoL
+    I = I - 1
+  }
+}
+
+Print "Spawning F..."
+
+Spawn F
+
+Print "hello", EoL

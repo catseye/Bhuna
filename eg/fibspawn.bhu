@@ -1,0 +1,17 @@
+Fib = ^ X {
+  if X > 2
+    return Fib(X - 1) + Fib(X - 2)
+  else
+    return 1
+}
+
+MakeFibPrinter = ^ X {
+  return ^ { Print "Fib(", X, ")=", Fib(X), EoL }
+}
+
+I = 1
+while I <= 25 {
+  Q = MakeFibPrinter(I)
+  Spawn Q
+  I = I + 1
+}

@@ -1,0 +1,5 @@
+import "modules/io"
+
+// Print "Hello", EoL
+
+Hello 42

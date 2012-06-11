@@ -1,0 +1,8 @@
+A = [1, 2, 3]
+I = 10
+while I > 0 {
+  A[2] = I
+  Print A, EoL
+  I = I - 1
+}
+
