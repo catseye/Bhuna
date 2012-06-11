@@ -16,11 +16,15 @@ extern int trace_gen;
 
 static vm_label_t gptr, program;
 
+/*
 vm_label_t patch_stack[4096];
 int psp = 0;
 
 unsigned char *last_ins_at = NULL;
 unsigned char last_ins = 255;
+*/
+
+#if 0
 
 /*** backpatcher ***/
 
@@ -277,9 +281,16 @@ ast_gen_r(struct ast *a)
 		assert(a->u.assignment.left != NULL);
 		assert(a->u.assignment.left->type == AST_LOCAL);
 		ast_gen_r(a->u.assignment.right);
-		/*gen_deep_copy();*/
-		gen_pop_local(a->u.assignment.left->u.local.index,
-		    a->u.assignment.left->u.local.upcount);
+		if (a->u.assignment.defining) {
+			/* XXX */
+			/*
+			gen_init_local(a->u.assignment.left->u.local.index,
+			    a->u.assignment.left->u.local.upcount);
+			*/
+		} else {
+			gen_pop_local(a->u.assignment.left->u.local.index,
+			    a->u.assignment.left->u.local.upcount);
+		}
 		break;
 	case AST_CONDITIONAL:
 		ast_gen_r(a->u.conditional.test);
@@ -317,6 +328,10 @@ ast_gen(vm_label_t *given_prog, struct ast *a)
 	*gptr++ = INSTR_HALT;
 }
 
+#else
+#define gen(x)	*gptr++ = x
+#endif
+
 /*** gen VM from iprogram ***/
 
 void
@@ -339,14 +354,15 @@ iprogram_gen(vm_label_t *given_prog, struct iprogram *ip)
 		gen(ic->opcode);
 		switch (ic->opcode) {
 		case INSTR_PUSH_VALUE:
-			if (ic->operand.value->type == VALUE_CLOSURE) {
-				k[ki++] = ic->operand.value->v.k;
+			if (ic->operand.value.type == VALUE_CLOSURE) {
+				k[ki++] = ic->operand.value.v.s->v.k;
 			}
-			*(((struct value **)gptr)++) = ic->operand.value;
+			*(((struct value *)gptr)++) = ic->operand.value;
 			break;
 		case INSTR_PUSH_LOCAL:
 		case INSTR_POP_LOCAL:
 		case INSTR_COW_LOCAL:
+		case INSTR_INIT_LOCAL:
 			*gptr++ = (unsigned char)ic->operand.local.index;
 			*gptr++ = (unsigned char)ic->operand.local.upcount;
 			break;

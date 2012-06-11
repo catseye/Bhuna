@@ -10,6 +10,7 @@
 #include "ast.h"
 #include "gc.h"
 #include "process.h"
+#include "utf8.h"
 
 /*
  * Macros to push values onto and pop values off of the stack.
@@ -25,7 +26,8 @@ extern int trace_vm;
 extern int trace_gc;
 #endif
 
-extern int gc_target, gc_trigger, a_count, v_count;
+extern int gc_target, gc_trigger, a_count; /* v_count; */
+int v_count = 0;
 static int i;
 
 struct vm *
@@ -40,7 +42,7 @@ vm_new(vm_label_t program, size_t prog_size)
 	vm->pc = vm->program;
 
 	vm->vstack_size = 65536;
-	vm->vstack = bhuna_malloc(vm->vstack_size * sizeof(struct value *));
+	vm->vstack = bhuna_malloc(vm->vstack_size * sizeof(struct value));
 	vm->vstack_ptr = vm->vstack;
 
 	vm->cstack_size = 8192;
@@ -69,7 +71,7 @@ vm_free(struct vm *vm)
 static void
 dump_stack(struct vm *vm)
 {
-	struct value **si;
+	struct value *si;
 	int i = 0;
 
 	for (si = vm->vstack; si < vm->vstack_ptr; si++) {
@@ -88,7 +90,7 @@ dump_activation_stack(struct vm *vm)
 	for (a = (struct activation *)vm->astack;
 	     (unsigned char *)a < vm->astack_ptr;
 	     a += (sizeof(struct activation) +
-	     sizeof(struct value *) * a->size)) {
+	     sizeof(struct value) * a->size)) {
 		printf("ask@%02d: ", i++);
 		activation_dump(a, 0);
 		printf("\n");
@@ -106,12 +108,12 @@ int
 vm_run(struct vm *vm, int xmax)
 {
 	vm_label_t label;
-	struct value *l = NULL, *r = NULL, *v = NULL;
+	struct value l, r, v;
 	struct activation *ar;
 	struct builtin *ext_bi;
 	int varity;
 	int xcount = 0;
-	struct value *zero, *one, *two;
+	struct value zero, one, two;
 	/*int upcount, index; */
 
 #ifdef DEBUG
@@ -174,8 +176,8 @@ vm_run(struct vm *vm, int xmax)
 #ifdef INLINE_BUILTINS
 		case INDEX_BUILTIN_NOT:
 			POP_VALUE(l);
-			if (l->type == VALUE_BOOLEAN) {
-				v = value_new_boolean(!l->v.b);
+			if (l.type == VALUE_BOOLEAN) {
+				v = value_new_boolean(!l.v.b);
 			} else {
 				v = value_new_error("type mismatch");
 			}
@@ -184,8 +186,8 @@ vm_run(struct vm *vm, int xmax)
 		case INDEX_BUILTIN_AND:
 			POP_VALUE(r);
 			POP_VALUE(l);
-			if (l->type == VALUE_BOOLEAN && r->type == VALUE_BOOLEAN) {
-				v = value_new_boolean(l->v.b && r->v.b);
+			if (l.type == VALUE_BOOLEAN && r.type == VALUE_BOOLEAN) {
+				v = value_new_boolean(l.v.b && r.v.b);
 			} else {
 				v = value_new_error("type mismatch");
 			}
@@ -194,8 +196,8 @@ vm_run(struct vm *vm, int xmax)
 		case INDEX_BUILTIN_OR:
 			POP_VALUE(r);
 			POP_VALUE(l);
-			if (l->type == VALUE_BOOLEAN && r->type == VALUE_BOOLEAN) {
-				v = value_new_boolean(l->v.b || r->v.b);
+			if (l.type == VALUE_BOOLEAN && r.type == VALUE_BOOLEAN) {
+				v = value_new_boolean(l.v.b || r.v.b);
 			} else {
 				v = value_new_error("type mismatch");
 			}
@@ -205,8 +207,10 @@ vm_run(struct vm *vm, int xmax)
 		case INDEX_BUILTIN_EQU:
 			POP_VALUE(r);
 			POP_VALUE(l);
-			if (l->type == VALUE_INTEGER && r->type == VALUE_INTEGER) {
-				v = value_new_boolean(l->v.i == r->v.i);
+			if (l.type == VALUE_INTEGER && r.type == VALUE_INTEGER) {
+				v = value_new_boolean(l.v.i == r.v.i);
+			} else if (l.type == VALUE_OPAQUE && r.type == VALUE_OPAQUE) {
+				v = value_new_boolean(l.v.ptr == r.v.ptr);
 			} else {
 				v = value_new_error("type mismatch");
 			}
@@ -215,8 +219,8 @@ vm_run(struct vm *vm, int xmax)
 		case INDEX_BUILTIN_NEQ:
 			POP_VALUE(r);
 			POP_VALUE(l);
-			if (l->type == VALUE_INTEGER && r->type == VALUE_INTEGER) {
-				v = value_new_boolean(l->v.i != r->v.i);
+			if (l.type == VALUE_INTEGER && r.type == VALUE_INTEGER) {
+				v = value_new_boolean(l.v.i != r.v.i);
 			} else {
 				v = value_new_error("type mismatch");
 			}
@@ -225,8 +229,8 @@ vm_run(struct vm *vm, int xmax)
 		case INDEX_BUILTIN_GT:
 			POP_VALUE(r);
 			POP_VALUE(l);
-			if (l->type == VALUE_INTEGER && r->type == VALUE_INTEGER) {
-				v = value_new_boolean(l->v.i > r->v.i);
+			if (l.type == VALUE_INTEGER && r.type == VALUE_INTEGER) {
+				v = value_new_boolean(l.v.i > r.v.i);
 			} else {
 				v = value_new_error("type mismatch");
 			}
@@ -235,8 +239,8 @@ vm_run(struct vm *vm, int xmax)
 		case INDEX_BUILTIN_LT:
 			POP_VALUE(r);
 			POP_VALUE(l);
-			if (l->type == VALUE_INTEGER && r->type == VALUE_INTEGER) {
-				v = value_new_boolean(l->v.i < r->v.i);
+			if (l.type == VALUE_INTEGER && r.type == VALUE_INTEGER) {
+				v = value_new_boolean(l.v.i < r.v.i);
 			} else {
 				v = value_new_error("type mismatch");
 			}
@@ -245,8 +249,8 @@ vm_run(struct vm *vm, int xmax)
 		case INDEX_BUILTIN_GTE:
 			POP_VALUE(r);
 			POP_VALUE(l);
-			if (l->type == VALUE_INTEGER && r->type == VALUE_INTEGER) {
-				v = value_new_boolean(l->v.i >= r->v.i);
+			if (l.type == VALUE_INTEGER && r.type == VALUE_INTEGER) {
+				v = value_new_boolean(l.v.i >= r.v.i);
 			} else {
 				v = value_new_error("type mismatch");
 			}
@@ -255,8 +259,8 @@ vm_run(struct vm *vm, int xmax)
 		case INDEX_BUILTIN_LTE:
 			POP_VALUE(r);
 			POP_VALUE(l);
-			if (l->type == VALUE_INTEGER && r->type == VALUE_INTEGER) {
-				v = value_new_boolean(l->v.i <= r->v.i);
+			if (l.type == VALUE_INTEGER && r.type == VALUE_INTEGER) {
+				v = value_new_boolean(l.v.i <= r.v.i);
 			} else {
 				v = value_new_error("type mismatch");
 			}
@@ -266,8 +270,8 @@ vm_run(struct vm *vm, int xmax)
 		case INDEX_BUILTIN_ADD:
 			POP_VALUE(r);
 			POP_VALUE(l);
-			if (l->type == VALUE_INTEGER && r->type == VALUE_INTEGER) {
-				v = value_new_integer(l->v.i + r->v.i);
+			if (l.type == VALUE_INTEGER && r.type == VALUE_INTEGER) {
+				v = value_new_integer(l.v.i + r.v.i);
 			} else {
 				v = value_new_error("type mismatch");
 			}
@@ -276,8 +280,8 @@ vm_run(struct vm *vm, int xmax)
 		case INDEX_BUILTIN_MUL:
 			POP_VALUE(r);
 			POP_VALUE(l);
-			if (l->type == VALUE_INTEGER && r->type == VALUE_INTEGER) {
-				v = value_new_integer(l->v.i * r->v.i);
+			if (l.type == VALUE_INTEGER && r.type == VALUE_INTEGER) {
+				v = value_new_integer(l.v.i * r.v.i);
 			} else {
 				v = value_new_error("type mismatch");
 			}
@@ -287,8 +291,8 @@ vm_run(struct vm *vm, int xmax)
 			POP_VALUE(r);
 			POP_VALUE(l);
 			//subs++;
-			if (l->type == VALUE_INTEGER && r->type == VALUE_INTEGER) {
-				v = value_new_integer(l->v.i - r->v.i);
+			if (l.type == VALUE_INTEGER && r.type == VALUE_INTEGER) {
+				v = value_new_integer(l.v.i - r.v.i);
 			} else {
 				v = value_new_error("type mismatch");
 			}
@@ -297,11 +301,11 @@ vm_run(struct vm *vm, int xmax)
 		case INDEX_BUILTIN_DIV:
 			POP_VALUE(r);
 			POP_VALUE(l);
-			if (l->type == VALUE_INTEGER && r->type == VALUE_INTEGER) {
-				if (r->v.i == 0)
+			if (l.type == VALUE_INTEGER && r.type == VALUE_INTEGER) {
+				if (r.v.i == 0)
 					v = value_new_error("division by zero");
 				else
-					v = value_new_integer(l->v.i / r->v.i);
+					v = value_new_integer(l.v.i / r.v.i);
 			} else {
 				v = value_new_error("type mismatch");
 			}
@@ -310,11 +314,11 @@ vm_run(struct vm *vm, int xmax)
 		case INDEX_BUILTIN_MOD:
 			POP_VALUE(r);
 			POP_VALUE(l);
-			if (l->type == VALUE_INTEGER && r->type == VALUE_INTEGER) {
-				if (r->v.i == 0)
+			if (l.type == VALUE_INTEGER && r.type == VALUE_INTEGER) {
+				if (r.v.i == 0)
 					v = value_new_error("modulo by zero");
 				else
-					v = value_new_integer(l->v.i % r->v.i);
+					v = value_new_integer(l.v.i % r.v.i);
 			} else {
 				v = value_new_error("type mismatch");			}
 			PUSH_VALUE(v);
@@ -322,8 +326,28 @@ vm_run(struct vm *vm, int xmax)
 
 #endif /* INLINE_BUILTINS */
 
+		/*
+		 * This sort of needs to be here even when INLINE_BUILTINS
+		 * isn't used (in practice INLINE_BUILTINS will always be
+		 * used anyway...)
+		 */
+		case INDEX_BUILTIN_RECV:
+			POP_VALUE(l);
+			r = value_null();
+
+			if (l.type == VALUE_INTEGER) {
+				if (!process_recv(&r)) {
+					PUSH_VALUE(l);
+					return(VM_WAITING);
+				}
+			} else {
+				r = value_new_error("type mismatch");
+			}
+			PUSH_VALUE(r);
+			break;
+
 		case INSTR_PUSH_VALUE:
-			l = *(struct value **)(vm->pc + 1);
+			l = *(struct value *)(vm->pc + 1);
 #ifdef DEBUG
 			if (trace_vm) {
 				printf("INSTR_PUSH_VALUE:\n");
@@ -332,7 +356,7 @@ vm_run(struct vm *vm, int xmax)
 			}
 #endif
 			PUSH_VALUE(l);
-			vm->pc += sizeof(struct value *);
+			vm->pc += sizeof(struct value);
 			break;
 
 		case INSTR_PUSH_ZERO:
@@ -389,6 +413,20 @@ vm_run(struct vm *vm, int xmax)
 			vm->pc += sizeof(unsigned char) * 2;
 			break;
 
+		case INSTR_INIT_LOCAL:
+			POP_VALUE(l);
+#ifdef DEBUG
+			if (trace_vm) {
+				printf("INSTR_INIT_LOCAL:\n");
+				value_print(l);
+				printf("\n");
+			}
+#endif
+			activation_initialize_value(vm->current_ar,
+			    *(vm->pc + 1), l);
+			vm->pc += sizeof(unsigned char) * 2;
+			break;
+
 		case INSTR_JMP:
 			label = *(vm_label_t *)(vm->pc + 1);
 #ifdef DEBUG
@@ -409,7 +447,7 @@ vm_run(struct vm *vm, int xmax)
 				printf(", #%d:\n", label - vm->program);
 			}
 #endif
-			if (!l->v.b) {
+			if (!l.v.b) {
 				vm->pc = label - 1;
 			} else {
 				vm->pc += sizeof(vm_label_t);
@@ -418,29 +456,29 @@ vm_run(struct vm *vm, int xmax)
 
 		case INSTR_CALL:
 			POP_VALUE(l);
-			label = l->v.k->label;
-			if (l->v.k->cc > 0) {
+			label = l.v.s->v.k->label;
+			if (l.v.s->v.k->cc > 0) {
 				/*
 				 * Create a new activation record
 				 * on the heap for this call.
 				 */
 				ar = activation_new_on_heap(
-				    l->v.k->arity +
-				    l->v.k->locals,
-				    vm->current_ar, l->v.k->ar);
+				    l.v.s->v.k->arity +
+				    l.v.s->v.k->locals,
+				    vm->current_ar, l.v.s->v.k->ar);
 			} else {
 				/*
 				 * Optimize by placing it on a stack.
 				 */
 				ar = activation_new_on_stack(
-				    l->v.k->arity +
-				    l->v.k->locals,
-				    vm->current_ar, l->v.k->ar, vm);
+				    l.v.s->v.k->arity +
+				    l.v.s->v.k->locals,
+				    vm->current_ar, l.v.s->v.k->ar, vm);
 			}
 			/*
 			 * Fill out the activation record.
 			 */
-			for (i = l->v.k->arity - 1; i >= 0; i--) {
+			for (i = l.v.s->v.k->arity - 1; i >= 0; i--) {
 				POP_VALUE(r);
 				activation_initialize_value(ar, i, r);
 			}
@@ -461,7 +499,7 @@ vm_run(struct vm *vm, int xmax)
 
 		case INSTR_GOTO:
 			POP_VALUE(l);
-			label = l->v.k->label;
+			label = l.v.s->v.k->label;
 
 			/*
 			 * DON'T create a new activation record for this leap
@@ -469,11 +507,11 @@ vm_run(struct vm *vm, int xmax)
 			 */
 			/*
 			printf("GOTOing a closure w/arity %d locals %d\n",
-				l->v.k->arity, l->v.k->locals);
+				l.v.s->v.k->arity, l.v.s->v.k->locals);
 			printf("current ar size %d\n", current_ar->size);
 			*/
 
-			if (vm->current_ar->size < l->v.k->arity + l->v.k->locals) {
+			if (vm->current_ar->size < l.v.s->v.k->arity + l.v.s->v.k->locals) {
 				/*
 				 * REMOVE the current activation record, if on the stack.
 				 */
@@ -488,36 +526,36 @@ vm_run(struct vm *vm, int xmax)
 				/*
 				 * Create a NEW activation record... wherever.
 				 */
-				if (l->v.k->cc > 0) {
+				if (l.v.s->v.k->cc > 0) {
 					/*
 					 * Create a new activation record
 					 * on the heap for this call.
 					 */
 					vm->current_ar = activation_new_on_heap(
-					    l->v.k->arity +
-					    l->v.k->locals,
-					    vm->current_ar, l->v.k->ar);
+					    l.v.s->v.k->arity +
+					    l.v.s->v.k->locals,
+					    vm->current_ar, l.v.s->v.k->ar);
 				} else {
 					/*
 					 * Optimize by placing it on a stack.
 					 */
 					vm->current_ar = activation_new_on_stack(
-					    l->v.k->arity +
-					    l->v.k->locals,
-					    vm->current_ar, l->v.k->ar, vm);
+					    l.v.s->v.k->arity +
+					    l.v.s->v.k->locals,
+					    vm->current_ar, l.v.s->v.k->ar, vm);
 				}
 			}
 
 			/*
 			printf("NOW GOTOing a closure w/arity %d locals %d\n",
-				l->v.k->arity, l->v.k->locals);
+				l.v.s->v.k->arity, l.v.s->v.k->locals);
 			printf("NOW current ar size %d\n", current_ar->size);
 			*/
 
 			/*
 			 * Fill out the current activation record.
 			 */
-			for (i = l->v.k->arity - 1; i >= 0; i--) {
+			for (i = l.v.s->v.k->arity - 1; i >= 0; i--) {
 				POP_VALUE(r);
 				activation_set_value(vm->current_ar, i, 0, r);
 			}
@@ -555,11 +593,11 @@ vm_run(struct vm *vm, int xmax)
 
 		case INSTR_SET_ACTIVATION:
 			POP_VALUE(l);
-			l->v.k->ar = vm->current_ar;
+			l.v.s->v.k->ar = vm->current_ar;
 #ifdef DEBUG
 			if (trace_vm) {
 				printf("INSTR_SET_ACTIVATION #%d\n",
-				    l->v.k->label - vm->program);
+				    l.v.s->v.k->label - vm->program);
 			}
 #endif
 			PUSH_VALUE(l);
@@ -568,7 +606,7 @@ vm_run(struct vm *vm, int xmax)
 		case INSTR_COW_LOCAL:
 			l = activation_get_value(vm->current_ar, *(vm->pc + 1), *(vm->pc + 2));
 
-			if (l->refcount > 1) {
+			if (l.v.s->refcount > 1) {
 				/*
 				printf("deep-copying ");
 				value_print(l);
@@ -593,13 +631,15 @@ vm_run(struct vm *vm, int xmax)
 			ext_bi = *(struct builtin **)(vm->pc + 1);
 #ifdef DEBUG
 			if (trace_vm) {
-				printf("INSTR_EXTERNAL(%s):\n", ext_bi->name);
+				printf("INSTR_EXTERNAL(");
+				fputsu8(stdout, ext_bi->name);
+				printf("):\n");
 			}
 #endif
 			varity = ext_bi->arity;
 			if (varity == -1) {
 				POP_VALUE(l);
-				varity = l->v.i;
+				varity = l.v.i;
 			}
 			ar = activation_new_on_stack(varity, vm->current_ar, NULL, vm);
 			for (i = varity - 1; i >= 0; i--) {
@@ -607,8 +647,7 @@ vm_run(struct vm *vm, int xmax)
 				activation_initialize_value(ar, i, l);
 			}
 
-			v = NULL;
-			ext_bi->fn(ar, &v);
+			v = ext_bi->fn(ar);
 			activation_free_from_stack(ar, vm);
 #ifdef DEBUG
 			if (trace_vm) {
@@ -617,10 +656,8 @@ vm_run(struct vm *vm, int xmax)
 				printf("\n");
 			}
 #endif
-			/* XXXXXXX */
-			if (ext_bi->is_pure) {
+			if (ext_bi->retval == 1)
 				PUSH_VALUE(v);
-			}
 
 			vm->pc += sizeof(struct builtin *);
 			break;
@@ -630,14 +667,15 @@ vm_run(struct vm *vm, int xmax)
 			 */
 #ifdef DEBUG
 			if (trace_vm) {
-				printf("INSTR_BUILTIN(#%d=%s):\n",
-				    *vm->pc, builtins[*vm->pc].name);
+				printf("INSTR_BUILTIN(#%d=", *vm->pc);
+				fputsu8(stdout, builtins[*vm->pc].name);
+				printf("):\n");
 			}
 #endif
 			varity = builtins[*vm->pc].arity;
 			if (varity == -1) {
 				POP_VALUE(l);
-				varity = l->v.i;
+				varity = l.v.i;
 			}
 			ar = activation_new_on_stack(varity, vm->current_ar, NULL, vm);
 			for (i = varity - 1; i >= 0; i--) {
@@ -645,8 +683,7 @@ vm_run(struct vm *vm, int xmax)
 				activation_initialize_value(ar, i, l);
 			}
 
-			v = NULL;
-			builtins[*vm->pc].fn(ar, &v);
+			v = builtins[*vm->pc].fn(ar);
 			activation_free_from_stack(ar, vm);
 #ifdef DEBUG
 			if (trace_vm) {
@@ -655,10 +692,8 @@ vm_run(struct vm *vm, int xmax)
 				printf("\n");
 			}
 #endif
-			/* XXXXXXX */
-			if (builtins[*vm->pc].is_pure) {
+			if (builtins[*vm->pc].retval == 1)
 				PUSH_VALUE(v);
-			}
 		}
 		vm->pc++;
 	}

@@ -8,10 +8,12 @@
 #include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>
+#include <wchar.h>
 
 #include "mem.h"
 #include "scan.h"
 #include "report.h"
+#include "utf8.h"
 
 struct scan_st *
 scan_open(char *filename)
@@ -19,7 +21,7 @@ scan_open(char *filename)
 	struct scan_st *sc;
 
 	sc = bhuna_malloc(sizeof(struct scan_st));
-	sc->token = (char *)bhuna_malloc(256 * sizeof(char));
+	sc->token = (wchar_t *)bhuna_malloc(256 * sizeof(wchar_t));
 
 	if ((sc->in = fopen(filename, "r")) == NULL) {
 		bhuna_free(sc->token);
@@ -29,6 +31,7 @@ scan_open(char *filename)
 
 	sc->lino = 1;
 	sc->columno = 1;
+	sc->lastcol = 0;
 	scan(sc);		/* prime the pump */
 
 	return(sc);
@@ -43,10 +46,12 @@ scan_dup(struct scan_st *orig)
 	struct scan_st *sc;
 
 	sc = bhuna_malloc(sizeof(struct scan_st));
-	sc->token = bhuna_strdup(orig->token);
+	sc->token = bhuna_wcsdup(orig->token);
+
 	sc->in = NULL;
 	sc->lino = orig->lino;
 	sc->columno = orig->columno;
+	sc->lastcol = orig->lastcol;
 
 	return(sc);
 }
@@ -60,38 +65,44 @@ scan_close(struct scan_st *sc)
 	bhuna_free(sc);
 }
 
-void
-scan_char(struct scan_st *sc, char *x)
-{	
-	*x = (char)getc(sc->in);
-	if (*x == '\n') {
+/*
+ * x is not a string, it is a pointer to a single character.
+ */
+static void
+scan_char(struct scan_st *sc, wchar_t *x)
+{
+	sc->lastcol = sc->columno;
+	*x = fgetu8(sc->in);
+	if (*x == L'\n') {
 		sc->columno = 1;
 		sc->lino++;
+	} else if (*x == L'\t') {
+		sc->columno++;
+		while (sc->columno % 8 != 0)
+			sc->columno++;
 	} else {
 		sc->columno++;
 	}
 }
 
-void
-scan_putback(struct scan_st *sc, char x)
+static void
+scan_putback(struct scan_st *sc, wchar_t x)
 {
-	if (feof(sc->in)) return;
-	ungetc(x, sc->in);
-	if (x == '\n') {
-		sc->columno = 80;	/* XXX heh */
+	if (feof(sc->in))
+		return;
+	ungetu8(x, sc->in);
+	sc->columno = sc->lastcol;
+	if (x == L'\n')
 		sc->lino--;
-	} else {
-		sc->columno--;
-	}
 }
 
-void
-scan(struct scan_st *sc)
+static void
+real_scan(struct scan_st *sc)
 {
-	char x;
+	wchar_t x;
 	int i = 0;
 
-	sc->token[0] = '\0';
+	sc->token[0] = L'\0';
 	if (feof(sc->in)) {
 		sc->type = TOKEN_EOF;
 		return;
@@ -102,28 +113,28 @@ scan(struct scan_st *sc)
 	/* Skip whitespace. */
 
 top:
-	while (isspace(x) && !feof(sc->in)) {
+	while (iswspace(x) && !feof(sc->in)) {
 		scan_char(sc, &x);
 	}
 
 	/* Skip comments. */
 
-	if (x == '/') {
+	if (x == L'/') {
 		scan_char(sc, &x);
-		if (x == '/') {
-			while (x != '\n' && !feof(sc->in)) {
+		if (x == L'/') {
+			while (x != L'\n' && !feof(sc->in)) {
 				scan_char(sc, &x);
 			}
 			goto top;
 		} else {
 			scan_putback(sc, x);
-			x = '/';
+			x = L'/';
 			/* falls through to the bottom of scan() */
 		}
 	}
 
 	if (feof(sc->in)) {
-		sc->token[0] = '\0';
+		sc->token[0] = L'\0';
 		sc->type = TOKEN_EOF;
 		return;
 	}
@@ -132,13 +143,13 @@ top:
 	 * Scan decimal numbers.  Must start with a
 	 * digit (not a sign or decimal point.)
 	 */
-	if (isdigit(x)) {
-		while ((isdigit(x) || x == '.') && !feof(sc->in)) {
+	if (iswdigit(x)) {
+		while ((iswdigit(x) || x == L'.') && !feof(sc->in)) {
 			sc->token[i++] = x;
 			scan_char(sc, &x);
 		}
 		scan_putback(sc, x);
-		sc->token[i] = 0;
+		sc->token[i] = L'\0';
 		sc->type = TOKEN_NUMBER;
 		return;
 	}
@@ -146,13 +157,13 @@ top:
 	/*
 	 * Scan quoted strings.
 	 */
-	if (x == '"') {
+	if (x == L'"') {
 		scan_char(sc, &x);
-		while (x != '"' && !feof(sc->in) && i < 255) {
+		while (x != L'"' && !feof(sc->in) && i < 255) {
 			sc->token[i++] = x;
 			scan_char(sc, &x);
 		}
-		sc->token[i] = 0;
+		sc->token[i] = L'\0';
 		sc->type = TOKEN_QSTRING;
 		return;
 	}
@@ -160,13 +171,13 @@ top:
 	/*
 	 * Scan alphanumeric ("bareword") tokens.
 	 */
-	if (isalpha(x) || x == '_') {
-		while ((isalpha(x) || isdigit(x) || x == '_') && !feof(sc->in)) {
+	if (iswalpha(x) || x == L'_') {
+		while ((iswalpha(x) || iswdigit(x) || x == L'_') && !feof(sc->in)) {
 			sc->token[i++] = x;
 			scan_char(sc, &x);
 		}
 		scan_putback(sc, x);
-		sc->token[i] = 0;
+		sc->token[i] = L'\0';
 		sc->type = TOKEN_BAREWORD;
 		return;
 	}
@@ -174,13 +185,14 @@ top:
 	/*
 	 * Scan multi-character symbols.
 	 */
-	if (x == '>' || x == '<' || x == '=' || x == '!') {
-		while ((x == '>' || x == '<' || x == '=' || x == '!') &&
+	if (x == L'>' || x == L'<' || x == L'=' || x == L'!') {
+		while ((x == L'>' || x == L'<' || x == L'=' || x == L'!') &&
 		    !feof(sc->in) && i < 255) {
 			sc->token[i++] = x;
 			scan_char(sc, &x);
 		}
-		sc->token[i] = '\0';
+		scan_putback(sc, x);
+		sc->token[i] = L'\0';
 		sc->type = TOKEN_SYMBOL;
 		return;
 	}
@@ -194,11 +206,22 @@ top:
 }
 
 void
-scan_expect(struct scan_st *sc, char *x)
+scan(struct scan_st *sc)
 {
-	if (!strcmp(sc->token, x)) {
+	real_scan(sc);
+	/*
+	printf("scanned -> ");
+	fputsu8(stdout, sc->token);
+	printf("\n");
+	*/
+}
+
+void
+scan_expect(struct scan_st *sc, wchar_t *x)
+{
+	if (wcscmp(sc->token, x) == 0) {
 		scan(sc);
 	} else {
-		report(REPORT_ERROR, sc, "Expected '%s'", x);
+		report(REPORT_ERROR, sc, "Expected '%w'", x);
 	}
 }

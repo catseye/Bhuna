@@ -13,22 +13,13 @@ Stack = ^ Size {
     return S[SP]
   }
 
-  return [Push, Pop]
+  return ^{}
 }
 
 Q = Stack(256)
-Q_Push = Q[1]
-Q_Pop = Q[2]
 
-T = Stack(256)
-T_Push = T[1]
-T_Pop = T[2]
-
-// T_Push 23
-
-// Q_Push 15
-// Print Q_Pop(), EoL
-
-// T_Push 71
-// Print T_Pop(), " ", T_Pop(), EoL
-
+Print Q.1, EoL
+Print Q.2, EoL
+Print Q.3, EoL
+Print Q.4, EoL
+Print Q.5, EoL

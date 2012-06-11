@@ -12,7 +12,7 @@ main(int argc, char **argv)
 	void *lib_handle;
 	const char *error_msg;
 	struct activation *ar;
-	struct value *v = NULL, *result = NULL;
+	struct value v, result;
 	struct builtin *builtins;
 	int i, j;
 
@@ -34,7 +34,7 @@ main(int argc, char **argv)
 			v = value_new_integer(76);
 			activation_set_value(ar, j, 0, v);
 		}
-		(*builtins[i].fn)(ar, &result);
+		result = (*builtins[i].fn)(ar);
 		/*activation_free_from_stack(ar);*/
 		printf("Done!  Result: ");
 		value_print(result);

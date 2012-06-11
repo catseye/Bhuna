@@ -2,5 +2,5 @@ struct activation;
 struct value;
 struct type;
 
-void		 hello(struct activation *, struct value **);
+struct value	 hello(struct activation *);
 struct type	*btype_hello(void);

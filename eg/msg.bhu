@@ -1,0 +1,25 @@
+Task = ^ {
+  Done = False
+  Ctr = 0
+  while !Done {
+    Msg = Recv(100)
+    Print Ctr, ": Recv'd ", Msg, EoL
+    Ctr = Ctr + 1
+  }
+}
+
+Pid = Spawn(Task)
+
+MainDone = False
+while !MainDone {
+	I = 0 J = 0
+	while I < 1000000 {
+		while J < 1000000 {
+			J = J + 1
+		}
+		I = I + 1
+	}
+	Send Pid, "hello"
+	// MainDone = True
+}
+

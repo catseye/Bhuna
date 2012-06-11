@@ -8,18 +8,18 @@
 
 #include <sys/types.h>
 
-struct value;
+#include "value.h"
 
 struct list {
 	struct list		*next;
-	struct value		*value;
+	struct value		value;
 };
 
-void		 list_cons(struct list **, struct value *);
+void		 list_cons(struct list **, struct value);
 struct list	*list_dup(struct list *);
 void		 list_free(struct list **);
 size_t		 list_length(struct list *);
-int		 list_contains(struct list *, struct value *);
+int		 list_contains(struct list *, struct value);
 
 void		 list_dump(struct list *);
 

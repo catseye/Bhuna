@@ -28,15 +28,16 @@ typedef	unsigned char *	vm_label_t;
 #define	INSTR_PUSH_ZERO		141
 #define	INSTR_PUSH_ONE		142
 #define	INSTR_PUSH_TWO		143
+#define INSTR_INIT_LOCAL	144
 
 struct vm {
 	vm_label_t	  program;	/* vm bytecode array */
 	size_t		  prog_size;	/* size of bytecode array */
 	vm_label_t	  pc;
 
-	struct value	**vstack;	/* vm's working stack */
+	struct value	 *vstack;	/* vm's working stack */
 	size_t		  vstack_size;	/* size of array for stack */
-	struct value	**vstack_ptr;	/* ptr to top of stack */
+	struct value	 *vstack_ptr;	/* ptr to top of stack */
 
 	vm_label_t	 *cstack;	/* vm's call stack */
 	size_t		  cstack_size;	/* size of call stack array */

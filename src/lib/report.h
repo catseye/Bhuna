@@ -8,6 +8,7 @@
 #define __REPORT_H_
 
 #include <stdio.h>
+#include <wchar.h>
 
 struct scan_st;
 

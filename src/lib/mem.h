@@ -8,7 +8,9 @@
 #define __MEM_H_
 
 #include <sys/types.h>
+#include <wchar.h>
 
+wchar_t		*bhuna_wcsdup(wchar_t *);
 #ifdef DEBUG
 void		*bhuna_malloc(size_t);
 char		*bhuna_strdup(char *);

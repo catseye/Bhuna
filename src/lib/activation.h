@@ -1,4 +1,5 @@
-struct value;
+#include "value.h"
+
 struct vm;
 
 #define	AR_ADMIN_MARKED		1
@@ -17,20 +18,20 @@ struct activation {
 	struct activation	*caller;	/* recursively shallower activation record */
 	struct activation	*enclosing;	/* lexically enclosing activation record */
 	/*
-	struct value		 *value[];
+	struct value		  value[];
 	*/
 };
 
 #define VALARY(a,i)	\
-	((struct value **)((char *)a + sizeof(struct activation)))[i]
+	((struct value *)((unsigned char *)a + sizeof(struct activation)))[i]
 
 struct activation	*activation_new_on_heap(int, struct activation *, struct activation *);
 struct activation	*activation_new_on_stack(int, struct activation *, struct activation *, struct vm *);
 void			 activation_free_from_heap(struct activation *);
 void			 activation_free_from_stack(struct activation *, struct vm *);
 
-struct value		*activation_get_value(struct activation *, int, int);
-void			 activation_set_value(struct activation *, int, int, struct value *);
-void			 activation_initialize_value(struct activation *, int, struct value *);
+struct value		 activation_get_value(struct activation *, int, int);
+void			 activation_set_value(struct activation *, int, int, struct value);
+void			 activation_initialize_value(struct activation *, int, struct value);
 
 void			 activation_dump(struct activation *, int);

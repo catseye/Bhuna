@@ -55,6 +55,18 @@ type_new_closure(struct type *domain, struct type *range)
 }
 
 struct type *
+type_new_opaque(char *tag)
+{
+	struct type *t = type_new(TYPE_OPAQUE);
+
+	t->t.opaque.tag = tag;
+
+	return(t);
+}
+
+/** type constructors **/
+
+struct type *
 type_new_arg(struct type *left, struct type *right)
 {
 	struct type *t = type_new(TYPE_ARG);
@@ -81,6 +93,11 @@ type_new_set(struct type *left, struct type *right)
 	if (type_equal(type_representative(left), type_representative(right)))
 		return(left);
 
+	if (!type_is_known(left) || !type_is_known(right)) {
+		type_union(left, right);
+		return(left);
+	}
+
 	/* ???
 	if (type_is_void(left))
 		return(right);
@@ -105,7 +122,7 @@ type_new_var(int num)
 	return(t);
 }
 
-static int next_var_num = 10;
+static int next_var_num = 100;
 
 struct type *
 type_brand_new_var(void)
@@ -150,6 +167,8 @@ type_equal(struct type *a, struct type *b)
 	case TYPE_CLOSURE:
 		return(type_equal(a->t.closure.domain, b->t.closure.domain) &&
 		       type_equal(a->t.closure.range, b->t.closure.range));
+	case TYPE_OPAQUE:
+		return(strcmp(a->t.opaque.tag, b->t.opaque.tag) == 0);
 	case TYPE_ARG:
 		return(type_equal(a->t.arg.left, b->t.arg.left) &&
 		       type_equal(a->t.arg.right, b->t.arg.right));
@@ -217,6 +236,9 @@ type_unify(struct type *m, struct type *n)
 
 	if (s == t) {
 		return(1);
+	} else if (s->tclass == TYPE_OPAQUE && t->tclass == TYPE_OPAQUE) {
+		/* ??? */
+		return(strcmp(s->t.opaque.tag, t->t.opaque.tag) == 0);
 	} else if (s->tclass == TYPE_DICT && t->tclass == TYPE_DICT) {
 		type_union(s, t);
 		return(type_unify(s->t.dict.index, t->t.dict.index) &&
@@ -262,6 +284,12 @@ type_unify_crit(struct scan_st *sc, struct type *m, struct type *n)
 	return(unified);
 }
 
+int
+type_is_known(struct type *t)
+{
+	return(type_representative(t)->tclass != TYPE_VAR);
+}
+
 /*
  * If the given type is an unbound variable, unify it with a function
  * from a (fresh) unbound variable to another (fresh) unbound variable.
@@ -287,6 +315,16 @@ type_is_possibly_routine(struct type *t)
 
 	r = type_representative(t);
 	return(r->tclass == TYPE_VAR || r->tclass == TYPE_CLOSURE);
+}
+
+int
+type_is_possibly_void(struct type *t)
+{
+	struct type *r;
+
+	r = type_representative(t);
+	/* XXX if var, unify with void? */
+	return(r->tclass == TYPE_VAR || r->tclass == TYPE_VOID);
 }
 
 int
@@ -358,7 +396,7 @@ type_print(FILE *f, struct type *t)
 		fprintf(f, "builtin");
 		break;
 	case TYPE_OPAQUE:
-		fprintf(f, "opaque");
+		fprintf(f, "opaque(%s)", t->t.opaque.tag);
 		break;
 	case TYPE_VAR:
 		fprintf(f, "Type%d", t->t.var.num);

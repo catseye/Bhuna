@@ -6,10 +6,12 @@
 
 #include <stdarg.h>
 #include <stdio.h>
+#include <wchar.h>
 
 #include "mem.h"
 #include "scan.h"
 #include "report.h"
+#include "utf8.h"
 
 #include "type.h"
 #include "symbol.h"
@@ -42,9 +44,11 @@ report(int rtype, struct scan_st *sc, char *fmt, ...)
 	int i;
 
 	if (sc != NULL) {
-		fprintf(rfile, "%s (line %d, column %d, token '%s'): ",
+		fprintf(rfile, "%s (line %d, column %d, token '",
 		    rtype == REPORT_ERROR ? "Error" : "Warning",
-		    sc->lino, sc->columno, sc->token);
+		    sc->lino, sc->columno);
+		fputsu8(rfile, sc->token);
+		fprintf(rfile, "'): ");
 	} else {
 		fprintf(rfile, "%s (line ?, column ?, token ?): ",
 		    rtype == REPORT_ERROR ? "Error" : "Warning");
@@ -62,10 +66,13 @@ report(int rtype, struct scan_st *sc, char *fmt, ...)
 				symbol_print(rfile, va_arg(args, struct symbol *));
 				break;
 			case 's':
-				fprintf(stderr, "%s", va_arg(args, char *));
+				fprintf(rfile, "%s", va_arg(args, char *));
+				break;
+			case 'w':
+				fputsu8(rfile, va_arg(args, wchar_t *));
 				break;
 			case 'd':
-				fprintf(stderr, "%d", va_arg(args, int));
+				fprintf(rfile, "%d", va_arg(args, int));
 				break;
 			}
 		} else {

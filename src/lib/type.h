@@ -13,6 +13,7 @@ struct scan_st;
 #define TYPE_CLOSURE	 8
 #define TYPE_DICT	 9
 #define TYPE_OPAQUE	15
+
 #define TYPE_VAR	16
 #define TYPE_ARG	17
 #define TYPE_SET	18
@@ -29,6 +30,10 @@ struct type_dict {
 struct type_closure {
 	struct type *domain;
 	struct type *range;
+};
+
+struct type_opaque {
+	char *tag;
 };
 
 /* type of a list of arguments given to a function, c.f. ast_arg */
@@ -51,6 +56,7 @@ union type_union {
 	struct type_list	list;
 	struct type_dict	dict;
 	struct type_closure	closure;
+	struct type_opaque	opaque;
 	struct type_arg		arg;
 	struct type_set		set;
 	struct type_var		var;
@@ -67,6 +73,8 @@ struct type	*type_new(int);
 struct type	*type_new_list(struct type *);
 struct type	*type_new_dict(struct type *, struct type *);
 struct type	*type_new_closure(struct type *, struct type *);
+struct type	*type_new_opaque(char *);
+
 struct type	*type_new_arg(struct type *, struct type *);
 struct type	*type_new_set(struct type *, struct type *);
 struct type	*type_new_var(int);
@@ -76,11 +84,14 @@ void		 types_free(void);
 
 int		 type_equal(struct type *, struct type *);
 int		 type_unify(struct type *, struct type *);
+void		 type_union(struct type *, struct type *);
 struct type	*type_representative(struct type *);
 
+int		 type_is_known(struct type *);
 void		 type_ensure_routine(struct type *);
 int		 type_is_possibly_routine(struct type *);
 int		 type_unify_crit(struct scan_st *, struct type *, struct type *);
+int		 type_is_possibly_void(struct type *);
 int		 type_is_void(struct type *);
 int		 type_is_set(struct type *);
 int		 type_set_contains_void(struct type *);

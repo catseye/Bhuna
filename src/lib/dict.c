@@ -112,7 +112,7 @@ dict_free(struct dict *d)
  * by Aho, Sethi, & Ullman (a.k.a. "The Dragon Book", 2nd edition.)
  */
 static size_t
-hashpjw(struct value *key, size_t table_size) {
+hashpjw(struct value key, size_t table_size) {
 	char *p;
 	unsigned long int h = 0, g;
 
@@ -121,10 +121,10 @@ hashpjw(struct value *key, size_t table_size) {
 	 * This is naff... for certain values this will work.
 	 * For others, it won't...
 	 */
-	if (key->type == VALUE_INTEGER ||
-	    key->type == VALUE_BOOLEAN ||
-	    key->type == VALUE_ATOM) {
-		for (p = (char *)key; p - (char *)key < sizeof(int); p++) {
+	if (key.type == VALUE_INTEGER ||
+	    key.type == VALUE_BOOLEAN ||
+	    key.type == VALUE_ATOM) {
+		for (p = (char *)&key.v.i; p - (char *)&key.v.i < sizeof(int); p++) {
 			h = (h << 4) + (*p);
 			if ((g = h & 0xf0000000))
 				h = (h ^ (g >> 24)) ^ g;
@@ -140,7 +140,7 @@ hashpjw(struct value *key, size_t table_size) {
  * Create a new bucket (not called directly by client code.)
  */
 static struct chain *
-chain_new(struct value *key, struct value *value)
+chain_new(struct value key, struct value value)
 {
 	struct chain *c;
 
@@ -158,7 +158,7 @@ chain_new(struct value *key, struct value *value)
  * chain link itself if such a key exists (or NULL if it could not be found.)
  */
 static void
-dict_locate(struct dict *d, struct value *key,
+dict_locate(struct dict *d, struct value key,
 	    size_t *b_index, struct chain **c)
 {
 	*b_index = hashpjw(key, d->num_buckets);
@@ -173,8 +173,8 @@ dict_locate(struct dict *d, struct value *key,
 /*
  * Retrieve a value from a dictionary, given its key.
  */
-struct value *
-dict_fetch(struct dict *d, struct value *k)
+struct value
+dict_fetch(struct dict *d, struct value k)
 {
 	struct chain *c;
 	size_t i;
@@ -183,7 +183,7 @@ dict_fetch(struct dict *d, struct value *k)
 	if (c != NULL) {
 		return(c->value);
 	} else {
-		return(NULL);
+		return(value_null());
 	}
 }
 
@@ -191,7 +191,7 @@ dict_fetch(struct dict *d, struct value *k)
  * Insert a value into a dictionary.
  */
 void
-dict_store(struct dict *d, struct value *k, struct value *v)
+dict_store(struct dict *d, struct value k, struct value v)
 {
 	struct chain *c;
 	size_t i;
@@ -209,12 +209,12 @@ dict_store(struct dict *d, struct value *k, struct value *v)
 }
 
 int
-dict_exists(struct dict *d, struct value *key)
+dict_exists(struct dict *d, struct value key)
 {
-	struct value *v;
+	struct value v;
 
 	v = dict_fetch(d, key);
-	return(v != NULL);
+	return(v.type != VALUE_NULL);
 }
 
 /*
@@ -249,11 +249,11 @@ dict_eof(struct dict *d)
 	return(d->cursor == NULL);
 }
 
-struct value *
+struct value
 dict_getkey(struct dict *d)
 {
 	if (d->cursor == NULL) {
-		return(NULL);
+		return(value_null());
 	} else {
 		/* XXX grab? */
 		return(d->cursor->key);

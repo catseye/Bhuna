@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
+ 
 #include "ast.h"
 #include "list.h"
 #include "value.h"
@@ -10,6 +10,7 @@
 #include "vm.h"
 #include "type.h"
 #include "scan.h"
+#include "utf8.h"
 
 #include "symbol.h"
 #include "report.h"
@@ -56,7 +57,7 @@ ast_new_local(struct symbol_table *stab, struct symbol *sym)
 }
 
 struct ast *
-ast_new_value(struct value *v, struct type *t)
+ast_new_value(struct value v, struct type *t)
 {
 	struct ast *a;
 
@@ -80,7 +81,7 @@ struct ast *
 ast_new_builtin(struct scan_st *sc, struct builtin *bi, struct ast *right)
 {
 	struct ast *a;
-	struct type *t;
+	struct type *t, *tr;
 	int unify = 0;
 
 	t = bi->ty();
@@ -88,17 +89,24 @@ ast_new_builtin(struct scan_st *sc, struct builtin *bi, struct ast *right)
 
 #ifdef DEBUG
 	if (trace_type_inference) {
-		printf("(builtin `%s`)*****\n", bi->name);
+		printf("(builtin `");
+		fputsu8(stdout, bi->name);
+		printf("`)*****\n");
 		printf("type of args is: ");
-		type_print(stdout, right->datatype);
+		if (right != NULL)
+			type_print(stdout, right->datatype);
 		printf("\ntype of builtin is: ");
 		type_print(stdout, t);
 	}
 #endif
 
+	if (right == NULL)
+		tr = type_new(TYPE_VOID);
+	else
+		tr = right->datatype;
+
 	unify = type_unify_crit(sc,
-	    type_representative(t)->t.closure.domain,
-	    right->datatype);
+	    type_representative(t)->t.closure.domain, tr);
 
 #ifdef DEBUG
 	if (trace_type_inference) {
@@ -111,7 +119,7 @@ ast_new_builtin(struct scan_st *sc, struct builtin *bi, struct ast *right)
 	 * Fold constants.
 	 */
 	if (bi->is_pure && ast_is_constant(right)) {
-		struct value *v = NULL;
+		struct value v;
 		struct activation *ar;
 		struct ast *g;
 		int i = 0;
@@ -132,7 +140,7 @@ ast_new_builtin(struct scan_st *sc, struct builtin *bi, struct ast *right)
 					activation_initialize_value(ar, i,
 					     g->u.arg.left->u.value.value);
 			}
-			bi->fn(ar, &v);
+			v = bi->fn(ar);
 		} else {
 			a = NULL;
 		}
@@ -201,6 +209,9 @@ ast_new_arg(struct ast *left, struct ast *right)
 {
 	struct ast *a;
 
+	if (left == NULL)
+		return(NULL);
+
 	a = ast_new(AST_ARG);
 	a->u.arg.left = left;
 	a->u.arg.right = right;
@@ -222,7 +233,10 @@ ast_new_routine(struct ast *body)
 	a = ast_new(AST_ROUTINE);
 	a->u.routine.body = body;
 	
-	a->datatype = a->u.routine.body->datatype;
+	if (a->u.routine.body != NULL)
+		a->datatype = a->u.routine.body->datatype;
+	else
+		a->datatype = type_new(TYPE_VOID);
 
 #ifdef DEBUG
 	if (trace_type_inference) {
@@ -272,7 +286,8 @@ ast_new_statement(struct ast *left, struct ast *right)
 }
 
 struct ast *
-ast_new_assignment(struct scan_st *sc, struct ast *left, struct ast *right)
+ast_new_assignment(struct scan_st *sc, struct ast *left, struct ast *right,
+		   int defining)
 {
 	struct ast *a;
 	int unify;
@@ -287,6 +302,7 @@ ast_new_assignment(struct scan_st *sc, struct ast *left, struct ast *right)
 	a = ast_new(AST_ASSIGNMENT);
 	a->u.assignment.left = left;
 	a->u.assignment.right = right;
+	a->u.assignment.defining = defining;
 
 	unify = type_unify_crit(sc, left->datatype, right->datatype);
 
@@ -313,6 +329,7 @@ ast_new_conditional(struct scan_st *sc, struct ast *test, struct ast *yes, struc
 {
 	struct ast *a;
 	int unify;
+	struct type *t;
 
 	a = ast_new(AST_CONDITIONAL);
 	a->u.conditional.test = test;
@@ -328,8 +345,10 @@ ast_new_conditional(struct scan_st *sc, struct ast *test, struct ast *yes, struc
 		printf("(if)*****\n");
 		printf("type of YES is: ");
 		type_print(stdout, yes->datatype);
-		printf("\ntype of NO is: ");
-		type_print(stdout, no->datatype);
+		if (no != NULL) {
+			printf("\ntype of NO is: ");
+			type_print(stdout, no->datatype);
+		}
 	}
 #endif
 
@@ -339,8 +358,12 @@ ast_new_conditional(struct scan_st *sc, struct ast *test, struct ast *yes, struc
 	/* actually, either of these can be VOID, in which case, pick the other */
 	/* unify = type_unify_crit(sc, yes->datatype, no->datatype); */
 	/* haha */
-	a->datatype = type_new_set(a->u.conditional.yes->datatype,
-	    a->u.conditional.no->datatype);
+	if (no == NULL) {
+		t = type_new(TYPE_VOID);
+	} else {
+		t = a->u.conditional.no->datatype;
+	}
+	a->datatype = type_new_set(a->u.conditional.yes->datatype, t);
 
 #ifdef DEBUG
 	if (trace_type_inference) {
@@ -563,7 +586,9 @@ ast_dump(struct ast *a, int indent)
 		printf(")\n");
 		break;
 	case AST_BUILTIN:
-		printf("`%s`{\n", a->u.builtin.bi->name);
+		printf("`");
+		fputsu8(stdout, a->u.builtin.bi->name);
+		printf("`{\n");
 		ast_dump(a->u.builtin.right, indent + 1);
 		for (i = 0; i < indent; i++) printf("  "); printf("}\n");
 		break;
@@ -591,7 +616,8 @@ ast_dump(struct ast *a, int indent)
 		for (i = 0; i < indent; i++) printf("  "); printf("}\n");
 		break;
 	case AST_ASSIGNMENT:
-		printf("{\n");
+		printf("(%s){\n", a->u.assignment.defining ?
+		    "definition" : "application");
 		ast_dump(a->u.assignment.left, indent + 1);
 		ast_dump(a->u.assignment.right, indent + 1);
 		for (i = 0; i < indent; i++) printf("  "); printf("}\n");

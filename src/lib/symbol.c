@@ -10,11 +10,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <wchar.h>
 
 #include "mem.h"
 #include "symbol.h"
 #include "type.h"
 #include "value.h"
+#include "utf8.h"
 
 /*** GLOBALS ***/
 
@@ -23,24 +25,28 @@ static int anon_counter = 0;
 /*** STATICS ***/
 
 static struct symbol *
-symbol_new(char *token, int kind)
+symbol_new(wchar_t *token, int kind)
 {
 	struct symbol *sym;
 
 	sym = bhuna_malloc(sizeof(struct symbol));
 
 	if (token == NULL) {
-		asprintf(&sym->token, "%%%d", ++anon_counter);
+		sym->token = bhuna_malloc(sizeof(wchar_t) * 4);
+		sym->token[0] = L'%';
+		sym->token[1] = (wchar_t)++anon_counter;
+		sym->token[2] = L'\0';
 	} else {
-		sym->token = bhuna_strdup(token);
+		sym->token = bhuna_wcsdup(token);
 	}
 
 	sym->kind = kind;
 	sym->in = NULL;
 	sym->index = -1;
 	sym->is_pure = 0;
+	sym->is_const = 0;
 	sym->type = NULL;
-	sym->value = NULL;
+	/*sym->value = NULL;*/
 	sym->builtin = NULL;
 
 	return(sym);
@@ -118,16 +124,20 @@ symbol_table_size(struct symbol_table *stab)
  * If token == NULL, a new anonymous symbol is created.
  */
 struct symbol *
-symbol_define(struct symbol_table *stab, char *token, int kind, struct value *v)
+symbol_define(struct symbol_table *stab, wchar_t *token, int kind, struct value *v)
 {
 	struct symbol *new_sym;
 
 	new_sym = symbol_new(token, kind);
 
 	new_sym->in = stab;
-	if (v == NULL) {
+	if (v != NULL) {
+		new_sym->is_const = 1;
+		new_sym->value = *v;
+	} else {
 		struct symbol_table *defining_table;
 
+		new_sym->is_const = 0;
 		/*
 		 * Find allocation offset for the symbol's value.
 		 */
@@ -137,8 +147,6 @@ symbol_define(struct symbol_table *stab, char *token, int kind, struct value *v)
 			defining_table = defining_table->parent;
 		new_sym->index = defining_table->next_index++;
 		/*printf("%s->index = %d\n", new_sym->token, new_sym->index);*/
-	} else {
-		new_sym->value = v;
 	}
 	new_sym->next = stab->head;
 	stab->head = new_sym;
@@ -147,12 +155,12 @@ symbol_define(struct symbol_table *stab, char *token, int kind, struct value *v)
 }
 
 struct symbol *
-symbol_lookup(struct symbol_table *stab, char *s, int global)
+symbol_lookup(struct symbol_table *stab, wchar_t *s, int global)
 {
 	struct symbol *sym;
 
 	for (sym = stab->head; sym != NULL; sym = sym->next)
-		if (strcmp(s, sym->token) == 0)
+		if (wcscmp(s, sym->token) == 0)
 			return(sym);
 	if (global && stab->parent != NULL)
 		return(symbol_lookup(stab->parent, s, global));
@@ -173,9 +181,9 @@ symbol_set_type(struct symbol *sym, struct type *t)
 }
 
 void
-symbol_set_value(struct symbol *sym, struct value *v)
+symbol_set_value(struct symbol *sym, struct value v)
 {
-	assert(sym->value != NULL);
+	assert(sym->is_const);
 	sym->value = v;
 }
 
@@ -212,9 +220,12 @@ symbol_dump(struct symbol *sym, int show_ast)
 
 	for (i = 0; i < stab_indent; i++)
 		printf(" ");
-	printf("`%s'(%08lx)", sym->token, (unsigned long)sym);
+	
+	printf("`");
+	fputsu8(stdout, sym->token);
+	printf("'(%08lx)", (unsigned long)sym);
 	type_print(stdout, sym->type);
-	if (sym->value != NULL) {
+	if (sym->is_const) {
 		printf("=");
 		value_print(sym->value);
 	}
@@ -225,7 +236,9 @@ void
 symbol_print(FILE *f, struct symbol *sym)
 {
 #ifdef DEBUG
-	fprintf(f, "symbol `%s' (type = ", sym->token);
+	fprintf(f, "symbol `");
+	fputsu8(f, sym->token);
+	fprintf(f, "' (type = ");
 	type_print(f, sym->type);
 	fprintf(f, ")");
 #endif

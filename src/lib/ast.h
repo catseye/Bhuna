@@ -2,8 +2,8 @@
 #define __AST_H_
 
 #include "vm.h"
+#include "value.h"
 
-struct value;
 struct builtin;
 struct type;
 struct symbol;
@@ -17,7 +17,7 @@ struct ast_local {
 };
 
 struct ast_value {
-	struct value		*value;
+	struct value		 value;
 };
 
 struct ast_builtin {
@@ -48,6 +48,7 @@ struct ast_statement {
 struct ast_assignment {
 	struct ast		*left;		/* ISA var */
 	struct ast		*right;		/* ISA apply/var */
+	int			 defining;
 };
 
 struct ast_conditional {
@@ -101,13 +102,13 @@ struct ast {
 };
 
 struct ast		*ast_new_local(struct symbol_table *, struct symbol *);
-struct ast		*ast_new_value(struct value *, struct type *);
+struct ast		*ast_new_value(struct value, struct type *);
 struct ast		*ast_new_builtin(struct scan_st *, struct builtin *, struct ast *);
 struct ast		*ast_new_apply(struct scan_st *, struct ast *, struct ast *, int);
 struct ast		*ast_new_arg(struct ast *, struct ast *);
 struct ast		*ast_new_routine(struct ast *);
 struct ast		*ast_new_statement(struct ast *, struct ast *);
-struct ast		*ast_new_assignment(struct scan_st *, struct ast *, struct ast *);
+struct ast		*ast_new_assignment(struct scan_st *, struct ast *, struct ast *, int);
 struct ast		*ast_new_conditional(struct scan_st *, struct ast *, struct ast *, struct ast *);
 struct ast		*ast_new_while_loop(struct scan_st *, struct ast *, struct ast *);
 struct ast		*ast_new_retr(struct ast *);
@@ -119,8 +120,5 @@ int			 ast_count_args(struct ast *);
 
 void			 ast_dump(struct ast *, int);
 char			*ast_name(struct ast *);
-
-void			 ast_eval_init(void);
-void			 ast_eval(struct ast *, struct value **);
 
 #endif /* !__AST_H_ */

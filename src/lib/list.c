@@ -7,7 +7,7 @@
 #include "value.h"
 
 void
-list_cons(struct list **l, struct value *v)
+list_cons(struct list **l, struct value v)
 {
 	struct list *n;
 
@@ -20,7 +20,7 @@ list_cons(struct list **l, struct value *v)
 struct list *
 list_dup(struct list *l)
 {
-	struct list *n;
+	struct list *n = l;
 
 	/* ... XXX ... */
 
@@ -56,7 +56,7 @@ list_length(struct list *l)
  * Full comparison used here.
  */
 int
-list_contains(struct list *l, struct value *v)
+list_contains(struct list *l, struct value v)
 {
 	while (l != NULL) {
 		if (value_equal(l->value, v))

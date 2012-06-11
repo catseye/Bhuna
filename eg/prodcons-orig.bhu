@@ -1,0 +1,32 @@
+Producer = ^ N, NP, Main {
+  if N = 0
+    Send Main, <Self(), NP>
+  else
+    Msg = Recv(1000)
+    Send Msg[1], <data, NP>
+    Producer N - 1, NP + 1, Main
+}
+
+Consumer = ^ N, NC, P, Main {
+  if N = 0
+    Send Main, <Self(), NC>
+  else
+    Send P, <Self(), next>
+    Msg = Recv(1000)
+    Consumer N - 1, NC + 1, P, Main
+}
+
+N = 100000
+P = Spawn(^{ Producer N, 0, Self() })
+C = Spawn(^{ Consumer N, 0, P, Self() })
+
+NP = 0
+NC = 0
+
+while NP = 0 & NC = 0 {
+  Msg = Recv(1000)
+  if Msg[1] = P { NP = Msg[2] }
+  if Msg[1] = C { NC = Msg[2] }
+}
+
+Print NP, " ", NC, EoL

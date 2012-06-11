@@ -1,7 +1,7 @@
 LIB=	bhuna
 
 SRCS=	report.c \
-	scan.c parse.c \
+	utf8.c scan.c parse.c \
 	symbol.c ast.c \
 	type.c \
 	mem.c pool.c gc.c \
@@ -16,12 +16,11 @@ SRCS=	report.c \
 NOMAN=	y
 
 # DESTDIR=/usr/local/sbin
-strip: libbhuna.so.0
+strip: libbhuna.so.0 libbhuna.a
 	strip libbhuna.so.0
 	ls -lah libbhuna.so.0
 
 SHLIB_MAJOR=0
-NOPROFILE=yes
 USELIBDIR=/usr/local/lib
 USESHLIBDIR=/usr/local/lib
 

@@ -19,10 +19,6 @@
 #include "process.h"
 #include "icode.h"
 
-#ifdef POOL_VALUES
-#include "pool.h"
-#endif
-
 #ifdef DEBUG
 #define OPTS "cdgG:ilmnopsvy"
 #define RUN_PROGRAM run_program
@@ -47,8 +43,8 @@ usage(char **argv)
 	fprintf(stderr, "  -g: trace garbage collection\n");
 #endif
 	fprintf(stderr, "  -G int: set garbage collection threshold\n");
-	fprintf(stderr, "  -i: create and dump intermediate format\n");
 #ifdef DEBUG
+	fprintf(stderr, "  -i: dump intermediate format\n");
 	fprintf(stderr, "  -l: trace bytecode generation (implies -x)\n");
 	fprintf(stderr, "  -m: trace virtual machine\n");
 	fprintf(stderr, "  -n: don't actually run program\n");
@@ -75,8 +71,8 @@ main(int argc, char **argv)
 	int run_program = 1;
 	int dump_symbols = 0;
 	int dump_program = 0;
+	int dump_icode = 0;
 #endif
-	int make_icode = 0;
 
 #ifdef DEBUG
 	setvbuf(stdout, NULL, _IOLBF, 0);
@@ -103,10 +99,10 @@ main(int argc, char **argv)
 		case 'G':
 			gc_trigger = atoi(optarg);
 			break;
-		case 'i':
-			make_icode++;
-			break;
 #ifdef DEBUG
+		case 'i':
+			dump_icode++;
+			break;
 		case 'l':
 			trace_gen++;
 			break;
@@ -177,18 +173,17 @@ main(int argc, char **argv)
 
 			program = bhuna_malloc(16384);
 
-			if (make_icode > 0) {
-				ip = ast_gen_iprogram(a);
-				iprogram_eliminate_nops(ip);
-				iprogram_optimize_tail_calls(ip);
-				iprogram_optimize_push_small_ints(ip);
-				iprogram_eliminate_dead_code(ip);
-				iprogram_gen(&program, ip);
-				if (make_icode > 1)
-					iprogram_dump(ip, program);
-			} else {
-				ast_gen(&program, a);
-			}
+			ip = ast_gen_iprogram(a);
+			iprogram_eliminate_nops(ip);
+			iprogram_eliminate_useless_jumps(ip);
+			iprogram_optimize_tail_calls(ip);
+			iprogram_optimize_push_small_ints(ip);
+			iprogram_eliminate_dead_code(ip);
+			iprogram_gen(&program, ip);
+#ifdef DEBUG
+			if (dump_icode > 0)
+				iprogram_dump(ip, program);
+#endif
 
 			vm = vm_new(program, 16384);
 			vm_set_pc(vm, program);
@@ -210,7 +205,9 @@ main(int argc, char **argv)
 		symbol_table_free(stab);
 		types_free();
 		if (trace_valloc > 0) {
+			/*
 			value_dump_global_table();
+			*/
 			printf("Created:  %8d\n", num_vars_created);
 			printf("Cached:   %8d\n", num_vars_cached);
 			printf("Freed:    %8d\n", num_vars_freed);

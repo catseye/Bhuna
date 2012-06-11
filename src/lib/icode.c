@@ -9,6 +9,7 @@
 #include "builtin.h"
 #include "value.h"
 #include "closure.h"
+#include "utf8.h"
 
 /*** iprograms ***/
 
@@ -102,7 +103,7 @@ icode_new_local(struct iprogram *ip, int opcode, int index, int upcount)
 }
 
 struct icode *
-icode_new_value(struct iprogram *ip, int opcode, struct value *value)
+icode_new_value(struct iprogram *ip, int opcode, struct value value)
 {
 	struct icode *ic;
 
@@ -195,26 +196,11 @@ icode_set_closure_entry_point(struct closure *k, struct icode *ic)
 
 /*************** intermediate code generator ****************/
 
-/*
-#include <assert.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-
-#include "vm.h"
-#include "ast.h"
-#include "value.h"
-#include "list.h"
-#include "closure.h"
-#include "activation.h"
-#include "builtin.h"
-*/
-
 static void
 ast_gen_r(struct iprogram *ip, struct ast *a)
 {
 	struct icode *ic1, *ic2, *ic3, *ic4;
-	struct value *v;
+	struct value v;
 
 	if (a == NULL)
 		return;
@@ -227,12 +213,12 @@ ast_gen_r(struct iprogram *ip, struct ast *a)
 		break;
 	case AST_VALUE:
 		icode_new_value(ip, INSTR_PUSH_VALUE, a->u.value.value);
-		if (a->u.value.value->type == VALUE_CLOSURE) {
+		if (a->u.value.value.type == VALUE_CLOSURE) {
 			icode_new(ip, INSTR_SET_ACTIVATION);
 			ic1 = icode_new(ip, INSTR_JMP);
 			ic2 = icode_new(ip, INSTR_NOP);
-			icode_set_closure_entry_point(a->u.value.value->v.k, ic2);
-			ast_gen_r(ip, a->u.value.value->v.k->ast);
+			icode_set_closure_entry_point(a->u.value.value.v.s->v.k, ic2);
+			ast_gen_r(ip, a->u.value.value.v.s->v.k->ast);
 			icode_new(ip, INSTR_RET);
 			ic3 = icode_new(ip, INSTR_NOP);
 			icode_set_branch(ic1, ic3);
@@ -274,9 +260,15 @@ ast_gen_r(struct iprogram *ip, struct ast *a)
 		assert(a->u.assignment.left != NULL);
 		assert(a->u.assignment.left->type == AST_LOCAL);
 		ast_gen_r(ip, a->u.assignment.right);
-		icode_new_local(ip, INSTR_POP_LOCAL,
-		    a->u.assignment.left->u.local.index,
-		    a->u.assignment.left->u.local.upcount);
+		if (a->u.assignment.defining) {
+			icode_new_local(ip, INSTR_INIT_LOCAL,
+			    a->u.assignment.left->u.local.index,
+			    a->u.assignment.left->u.local.upcount);
+		} else {
+			icode_new_local(ip, INSTR_POP_LOCAL,
+			    a->u.assignment.left->u.local.index,
+			    a->u.assignment.left->u.local.upcount);
+		}
 		break;
 	case AST_CONDITIONAL:
 		ast_gen_r(ip, a->u.conditional.test);
@@ -383,6 +375,10 @@ iprogram_dump(struct iprogram *ip, vm_label_t program)
 			printf("POP_LOCAL (%d,%d)",
 			    ic->operand.local.index, ic->operand.local.upcount);
 			break;
+		case INSTR_INIT_LOCAL:
+			printf("INIT_LOCAL (%d,%d)",
+			    ic->operand.local.index, ic->operand.local.upcount);
+			break;
 		case INSTR_JZ:
 			printf("JZ %s", icode_addr(ic->operand.branch, program));
 			break;
@@ -405,14 +401,18 @@ iprogram_dump(struct iprogram *ip, vm_label_t program)
 			printf("COW_LOCAL (%d,%d)",
 			    ic->operand.local.index, ic->operand.local.upcount);
 		case INSTR_EXTERNAL:
-			printf("EXTERNAL `%s'", ic->operand.builtin->name);
+			printf("EXTERNAL `"),
+			fputsu8(stdout, ic->operand.builtin->name);
+			printf("'");
 			break;
 		case INSTR_NOP:
 			printf("NOP");
 			break;
 
 		default:
-			printf("BUILTIN `%s'", builtins[ic->opcode].name);
+			printf("BUILTIN `");
+			fputsu8(stdout, builtins[ic->opcode].name);
+			printf("'");
 		}
 		printf("\n");
 	}
@@ -528,8 +528,8 @@ iprogram_optimize_push_small_ints(struct iprogram *ip)
 	for (ic = ip->head; ic != NULL; ic = ic_next) {
 		ic_next = ic->next;
 		if (ic->opcode == INSTR_PUSH_VALUE &&
-		    ic->operand.value->type == VALUE_INTEGER) {
-			switch (ic->operand.value->v.i) {
+		    ic->operand.value.type == VALUE_INTEGER) {
+			switch (ic->operand.value.v.i) {
 			case 0:
 				ic->opcode = INSTR_PUSH_ZERO;
 				break;
@@ -540,6 +540,33 @@ iprogram_optimize_push_small_ints(struct iprogram *ip)
 				ic->opcode = INSTR_PUSH_TWO;
 				break;
 			}
+		}
+	}
+}
+
+int
+count_referrers(struct icode *ic)
+{
+	struct icomefrom *icf;
+	int i = 0;
+
+	for (icf = ic->referrers; icf != NULL; icf = icf->next)
+		i++;
+
+	return(i);
+}
+
+void
+iprogram_eliminate_useless_jumps(struct iprogram *ip)
+{
+	struct icode *ic, *ic_next;
+
+	for (ic = ip->head; ic != NULL; ic = ic_next) {
+		ic_next = ic->next;
+		if (ic->opcode == INSTR_JMP &&
+		    ic->operand.branch->opcode == INSTR_RET) {
+			referrer_unwire(ic, ic->operand.branch);
+			ic->opcode = INSTR_RET;
 		}
 	}
 }

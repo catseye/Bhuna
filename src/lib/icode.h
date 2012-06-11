@@ -7,7 +7,8 @@
 
 #include "vm.h"
 
-struct value;
+#include "value.h"
+
 struct ast;
 struct builtin;
 
@@ -21,7 +22,7 @@ union icode_operand {
 		int index;
 		int upcount;
 	}		 local;
-	struct value	*value;
+	struct value	 value;
 	struct icode	*branch;
 	struct builtin	*builtin;
 };
@@ -54,7 +55,7 @@ void		 iprogram_dump(struct iprogram *, vm_label_t);
 
 struct icode	*icode_new(struct iprogram *, int);
 struct icode	*icode_new_local(struct iprogram *, int, int, int);
-struct icode	*icode_new_value(struct iprogram *, int, struct value *);
+struct icode	*icode_new_value(struct iprogram *, int, struct value);
 struct icode	*icode_new_builtin(struct iprogram *, struct builtin *);
 
 void		 icode_free(struct iprogram *, struct icode *);
@@ -67,6 +68,7 @@ void		 iprogram_eliminate_nops(struct iprogram *);
 void		 iprogram_eliminate_dead_code(struct iprogram *);
 void		 iprogram_optimize_tail_calls(struct iprogram *);
 void		 iprogram_optimize_push_small_ints(struct iprogram *);
+void		 iprogram_eliminate_useless_jumps(struct iprogram *);
 
 void		 referrer_unwire(struct icode *, struct icode *);
 void		 referrers_rewire(struct icode *, struct icode *);

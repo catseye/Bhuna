@@ -8,8 +8,10 @@
 #define __SYMBOL_H_
 
 #include <stdio.h>
+#include <wchar.h>
 
-struct value;
+#include "value.h"
+
 struct type;
 
 struct symbol_table {
@@ -22,13 +24,14 @@ struct symbol_table {
 struct symbol {
 	struct symbol_table	*in;	/* link to table we're in */
 	struct symbol		*next;	/* next symbol in symbol table */
-	char			*token;	/* lexeme making up the symbol */
+	wchar_t			*token;	/* lexeme making up the symbol */
 	int			 kind;	/* kind of symbol */
 	struct type		*type;	/* data type */
 
 	struct builtin		*builtin;
 	int			 is_pure; /* if true, symbol represents a function which is ref.transp. */
-	struct value		*value;	/* if non-NULL, symbol is a constant with this value */
+	int			 is_const; /* if true, symbol represents a constant */
+	struct value		 value;	/* if symbol is a constant, this is the value */
 
 	int			 index;	/* index into activation record */
 };
@@ -46,13 +49,13 @@ struct symbol_table	*symbol_table_root(struct symbol_table *);
 
 int			 symbol_table_size(struct symbol_table *);
 
-struct symbol		*symbol_define(struct symbol_table *, char *, int, struct value *);
-struct symbol		*symbol_lookup(struct symbol_table *, char *, int);
+struct symbol		*symbol_define(struct symbol_table *, wchar_t *, int, struct value *);
+struct symbol		*symbol_lookup(struct symbol_table *, wchar_t *, int);
 
 int			 symbol_is_global(struct symbol *);
 
 void			 symbol_set_type(struct symbol *, struct type *);
-void			 symbol_set_value(struct symbol *, struct value *);
+void			 symbol_set_value(struct symbol *, struct value);
 
 void			 symbol_table_dump(struct symbol_table *, int);
 void			 symbol_dump(struct symbol *, int);

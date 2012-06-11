@@ -1,0 +1,6 @@
+I = 0
+while I < 100000 {
+  L= [I, atom]
+  Print L, EoL
+  I = I + 1
+}

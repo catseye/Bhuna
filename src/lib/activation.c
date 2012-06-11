@@ -24,10 +24,10 @@ activation_new_on_heap(int size, struct activation *caller, struct activation *e
 	struct activation *a;
 
 	a = bhuna_malloc(sizeof(struct activation) +
-	    sizeof(struct value *) * size);
+	    sizeof(struct value) * size);
 #ifdef BZERO
 	bzero(a, sizeof(struct activation) +
-	    sizeof(struct value *) * size);
+	    sizeof(struct value) * size);
 #endif
 	a->size = size;
 	a->admin = 0;
@@ -63,7 +63,7 @@ activation_new_on_stack(int size, struct activation *caller,
 	a = activation_new_on_heap(size, caller, enclosing);
 #else
 	a = (struct activation *)vm->astack_ptr;
-	vm->astack_ptr += sizeof(struct activation) + sizeof(struct value *) * size;
+	vm->astack_ptr += sizeof(struct activation) + sizeof(struct value) * size;
 	if (vm->astack_ptr > vm->astack_hi)
 		vm->astack_hi = vm->astack_ptr;
 
@@ -114,11 +114,11 @@ activation_free_from_stack(struct activation *a, struct vm *vm)
 #endif
 
 	vm->astack_ptr -= (sizeof(struct activation) +
-			   sizeof(struct value *) * a->size);
+			   sizeof(struct value) * a->size);
 #endif
 }
 
-struct value *
+struct value
 activation_get_value(struct activation *a, int index, int upcount)
 {
 	assert(a != NULL);
@@ -129,15 +129,13 @@ activation_get_value(struct activation *a, int index, int upcount)
 #ifdef DEBUG
 	assert(index < a->size);
 #endif
-	return(((struct value **)((char *)a + sizeof(struct activation)))[index]);
+	return(VALARY(a, index));
 }
 
 void
 activation_set_value(struct activation *a, int index, int upcount,
-		     struct value *v)
+		     struct value v)
 {
-	struct value *d;
-
 	assert(a != NULL);
 	for (; upcount > 0; upcount--) {
 		a = a->enclosing;
@@ -152,16 +150,16 @@ activation_set_value(struct activation *a, int index, int upcount,
 */
 	assert(index < a->size);
 #endif
+	/*
 	v->refcount++;
-	d = VALARY(a, index);
-	if (d != NULL)
-		d->refcount--;
+	VALARY(a, index)->refcount--;
+	*/
 	VALARY(a, index) = v;
 }
 
 void
 activation_initialize_value(struct activation *a, int index,
-			    struct value *v)
+			    struct value v)
 {
 	assert(a != NULL);
 	assert(index < a->size);
@@ -184,7 +182,7 @@ activation_dump(struct activation *a, int detail)
 	if (detail > 0) {
 		for (i = 0; i < a->size; i++) {
 			printf(" ");
-			if (VALARY(a, i) != NULL && VALARY(a, i)->type == VALUE_CLOSURE) {
+			if (VALARY(a, i).type == VALUE_CLOSURE) {
 				printf("(closure) ");
 			} else {
 				value_print(VALARY(a, i));

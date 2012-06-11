@@ -13,14 +13,14 @@ struct builtin builtins[] = {
 };
 
 
-void
-hello(struct activation *ar, struct value **v)
+struct value
+hello(struct activation *ar)
 {
 	printf("Hello from IO!\n");
 	printf("You gave me: ");
 	value_print(activation_get_value(ar, 0, 0));
 	printf("!!!\n");
-	*v = value_new_integer(42);
+	return value_new_integer(42);
 }
 
 struct type *

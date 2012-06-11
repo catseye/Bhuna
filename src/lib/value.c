@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <wchar.h>
 
 #include "mem.h"
 #include "value.h"
@@ -15,12 +16,8 @@
 #include "list.h"
 #include "dict.h"
 #include "closure.h"
-
+#include "utf8.h"
 #include "type.h"
-
-#ifdef POOL_VALUES
-#include "pool.h"
-#endif
 
 #ifdef DEBUG
 extern int trace_valloc;
@@ -29,88 +26,15 @@ extern int num_vars_cached;
 extern int num_vars_freed;
 #endif
 
-struct value *v_head = NULL;
-int v_count = 0;
+struct s_value *sv_head = NULL;
 
-/*
- * Hash cons'ing.
- * Not strictly hash consing, since this isn't LISP...
- * but very much in the style of the paper
- * _Implementing Functional Language with Fast Equality,
- * Sets, and Maps: an Exercise in Hash Consing_, Goubault, 1992
- */
-#ifdef HASH_CONSING
-struct hc_chain *hc_bucket[HASH_CONS_SIZE];
-struct hc_chain *hc_c;
-int hc_h;
-
-void
-hc_init(void)
+struct value
+value_null(void)
 {
-	bzero(hc_bucket, HASH_CONS_SIZE * sizeof(struct hc_chain *));
-}
-#endif
+	struct value v;
 
-void
-value_dump_global_table(void)
-{
-#ifdef DEBUG
-	struct value *v;
-#ifdef HASH_CONSING
-	struct hc_chain **hccp;
-#endif
-
-	printf("----- BEGIN Global Table of Values -----\n");
-#ifdef HASH_CONSING
-	for (hccp = hc_bucket; hccp - hc_bucket < HASH_CONS_SIZE; hccp++) {
-		for (hc_c = *hccp; hc_c != NULL; hc_c = hc_c->next) {
-			v = hc_c->v;
-			printf("==> ");
-			value_print(v);
-			printf("\n");
-		}
-	}
-#else
-	for (v = v_head; v != NULL; v = v->next) {
-		printf("==> ");
-		value_print(v);
-		printf("\n");
-	}
-#endif
-	printf("----- END Global Table of Values -----\n");
-#endif
-}
-
-/*** GENERIC CONSTRUCTOR ***/
-
-static struct value *
-value_new(unsigned short int type)
-{
-	struct value *v;
-
-#ifdef POOL_VALUES
-	v = value_allocate();
-#else
-	v = bhuna_malloc(sizeof(struct value));
-#endif
-	v->type = type;
-	v->admin = 0;
-
-	/*
-	 * Link up to GC list.
-	 */
-	v->next = v_head;
-	v_head = v;
-	v_count++;
-
-	v->refcount = 0;
-
-#ifdef DEBUG
-	if (trace_valloc > 0) {
-		num_vars_created++;
-	}
-#endif
-
+	v.type = VALUE_NULL;
+	
 	return(v);
 }
 
@@ -119,56 +43,58 @@ value_new(unsigned short int type)
  * Typically used for values in the symbol table, vm program body, etc.
  */
 void
-value_deregister(struct value *v)
+value_deregister(struct value v)
 {
-	v->admin |= ADMIN_PERMANENT;
+	if (v.type & VALUE_STRUCTURED)
+		v.v.s->admin |= ADMIN_PERMANENT;
 }
 
-/*** UNCONDITIONAL DUPLICATOR ***/
-
 /*
- * Returns a deep(-ish) copy of the given value.
+ * Return a deep(ish) copy of the given value.
  * New strings (char arrays) are created when copying a string;
  * New list spines (struct list *) are created, but values are only grabbed, not dup'ed.
  * Some things are not copied, only the pointers to them.
  *
  * Note that the dup'ed value is 'new', i.e. it has a refcount of 1.
  */
-struct value *
-value_dup(struct value *v)
+struct value
+value_dup(struct value v)
 {
-	struct value *n; /*  *z; */
-	struct list *l;
-	/* size_t i; */
+	struct value n;
+	/*struct list *l;*/
 
-	switch (v->type) {
+	switch (v.type) {
 	case VALUE_INTEGER:
-		return(value_new_integer(v->v.i));
+		return(value_new_integer(v.v.i));
 	case VALUE_BOOLEAN:
-		return(value_new_boolean(v->v.b));
+		return(value_new_boolean(v.v.b));
 	case VALUE_STRING:
-		return(value_new_string(v->v.s));
+		return(value_new_string(v.v.s->v.s));
 	case VALUE_LIST:
 		n = value_new_list();
-		for (l = v->v.l; l != NULL; l = l->next) {
+	/*
+		for (l = v.v.s->v.l; l != NULL; l = l->next) {
 			value_list_append(&n, l->value);
 		}
+	*/
 		/*
 		n = value_new(VALUE_LIST);
 		n->v.l = list_dup(v->v.l);
 		*/
 		return(n);
 	case VALUE_ERROR:
-		return(value_new_error(v->v.e));
+		return(value_new_error(v.v.s->v.e));
 	case VALUE_BUILTIN:
-		return(value_new_builtin(v->v.bi));
+		return(value_new_builtin(v.v.bi));
 	case VALUE_CLOSURE:
-		return(value_new_closure(v->v.k->ast, v->v.k->ar,
-		    v->v.k->arity, v->v.k->locals, v->v.k->cc));
+		return(value_new_closure(v.v.s->v.k->ast, v.v.s->v.k->ar,
+		    v.v.s->v.k->arity, v.v.s->v.k->locals, v.v.s->v.k->cc));
 	case VALUE_DICT:
-		n = value_new(VALUE_DICT);
-		n->v.d = dict_dup(v->v.d);
+		n = value_new_dict(); /* XXX */
+		n.v.s->v.d = dict_dup(v.v.s->v.d);
 		return(n);
+	case VALUE_OPAQUE:
+		return(value_new_opaque(v.v.ptr));
 	default:
 		return(value_new_error("unknown type"));
 	}
@@ -177,278 +103,165 @@ value_dup(struct value *v)
 /*** DESTRUCTOR ***/
 
 void
-value_free(struct value *v)
+s_value_free(struct s_value *sv)
 {
-	if (v == NULL)
-		return;
-
-	/*assert(v->refcount == 0);*/
-
-#ifdef DEBUG
-	if (trace_valloc > 1) {
-		printf("[RC] freeing ");
-		value_print(v);
-		printf("\n");
-	}
-#endif
-
-	switch (v->type) {
+	switch (sv->type) {
 	case VALUE_LIST:
-		list_free(&v->v.l);
+		list_free(&sv->v.l);
 		break;
 	case VALUE_STRING:
-		if (v->v.s != NULL)
-			bhuna_free(v->v.s);
+		if (sv->v.s != NULL)
+			bhuna_free(sv->v.s);
 		break;
 	case VALUE_ERROR:
-		if (v->v.e != NULL)
-			bhuna_free(v->v.e);
+		if (sv->v.e != NULL)
+			bhuna_free(sv->v.e);
 		break;
 	case VALUE_CLOSURE:
-		closure_free(v->v.k);
+		closure_free(sv->v.k);
 		break;
 	case VALUE_DICT:
-		dict_free(v->v.d);
+		dict_free(sv->v.d);
+		break;
+	case VALUE_OPAQUE:
+		/* XXX oiks.  user GC "finalizer" ? */
 		break;
 	}
 
-#ifdef DEBUG
-	if (trace_valloc > 0) {
-		num_vars_freed++;
-	}
-#endif
-
-#ifdef POOL_VALUES
-	value_deallocate(v);
-#else
-	bhuna_free(v);
-#endif
-	v_count--;
+	bhuna_free(sv);
 }
 
 /*** SPECIFIC CONSTRUCTORS ***/
+/*** simple values ***/
 
-struct value *
+struct value
 value_new_integer(int i)
 {
-	struct value *v;
+	struct value v;
 
-#ifdef HASH_CONSING
-	hc_h = (i) % HASH_CONS_SIZE;
-	for (hc_c = hc_bucket[hc_h]; hc_c != NULL; hc_c = hc_c->next) {
-		if (hc_c->v->type == VALUE_INTEGER && hc_c->v->v.i == i) {
-			/*hc_c->v->admin |= ADMIN_SHARED;*/
-#ifdef DEBUG
-			if (trace_valloc > 0) {
-				num_vars_cached++;
-			}
-			if (trace_valloc > 1) {
-				printf("[RC] Cached ");
-				value_print(hc_c->v);
-				printf("\n");
-			}
-#endif
-			return(hc_c->v);
-		}
-	}
-#endif
-
-	v = value_new(VALUE_INTEGER);
-	v->v.i = i;
-
-#ifdef DEBUG
-	if (trace_valloc > 1) {
-		printf("[RC] created ");
-		value_print(v);
-		printf("\n");
-	}
-#endif
-
-#ifdef HASH_CONSING
-	hc_c = malloc(sizeof(struct hc_chain));
-	hc_c->next = hc_bucket[hc_h];
-	hc_c->v = v;
-	hc_bucket[hc_h] = hc_c;
-#endif
-
+	v.type = VALUE_INTEGER;
+	v.v.i = i;
+	
 	return(v);
 }
 
-struct value *
+struct value
 value_new_boolean(int b)
 {
-	struct value *v;
+	struct value v;
 
-#ifdef HASH_CONSING
-	hc_h = (b + 513) % HASH_CONS_SIZE;
-	for (hc_c = hc_bucket[hc_h]; hc_c != NULL; hc_c = hc_c->next) {
-		if (hc_c->v->type == VALUE_BOOLEAN && hc_c->v->v.b == b) {
-			/*hc_c->v->admin |= ADMIN_SHARED;*/
-#ifdef DEBUG
-			if (trace_valloc > 0) {
-				num_vars_cached++;
-			}
-			if (trace_valloc > 1) {
-				printf("[RC] Cached ");
-				value_print(hc_c->v);
-				printf("\n");
-			}
-#endif
-			return(hc_c->v);
-		}
-	}
-#endif
-
-	v = value_new(VALUE_BOOLEAN);
-	v->v.b = b;
-
-#ifdef DEBUG
-	if (trace_valloc > 1) {
-		printf("[RC] created ");
-		value_print(v);
-		printf("\n");
-	}
-#endif
-
-#ifdef HASH_CONSING
-	hc_c = malloc(sizeof(struct hc_chain));
-	hc_c->next = hc_bucket[hc_h];
-	hc_c->v = v;
-	hc_bucket[hc_h] = hc_c;
-#endif
-
+	v.type = VALUE_BOOLEAN;
+	v.v.b = b;
+	
 	return(v);
 }
 
-struct value *
+struct value
 value_new_atom(int atom)
 {
-	struct value *v;
+	struct value v;
 
-	v = value_new(VALUE_ATOM);
-	v->v.atom = atom;
-
-#ifdef DEBUG
-	if (trace_valloc > 1) {
-		printf("[RC] created ");
-		value_print(v);
-		printf("\n");
-	}
-#endif
-
+	v.type = VALUE_ATOM;
+	v.v.a = atom;
+	
 	return(v);
 }
 
-struct value *
-value_new_string(char *s)
-{
-	struct value *v;
-
-	v = value_new(VALUE_STRING);
-	v->v.s = strdup(s);
-
-#ifdef DEBUG
-	if (trace_valloc > 1) {
-		printf("[RC] created ");
-		value_print(v);
-		printf("\n");
-	}
-#endif
-
-	return(v);
-}
-
-struct value *
-value_new_list(void)
-{
-	struct value *v;
-
-	v = value_new(VALUE_LIST);
-	v->v.l = NULL;
-
-#ifdef DEBUG
-	if (trace_valloc > 1) {
-		printf("[RC] created ");
-		value_print(v);
-		printf("\n");
-	}
-#endif
-
-	return(v);
-}
-
-struct value *
-value_new_error(char *error)
-{
-	struct value *v;
-
-	v = value_new(VALUE_ERROR);
-	v->v.e = strdup(error);
-
-#ifdef DEBUG
-	if (trace_valloc > 1) {
-		printf("[RC] created ");
-		value_print(v);
-		printf("\n");
-	}
-#endif
-
-	return(v);
-}
-
-struct value *
+struct value
 value_new_builtin(struct builtin *bi)
 {
-	struct value *v;
+	struct value v;
 
-	v = value_new(VALUE_BUILTIN);
-	v->v.bi = bi;
+	v.type = VALUE_BUILTIN;
+	v.v.bi = bi;
+	
+	return(v);
+}
 
-#ifdef DEBUG
-	if (trace_valloc > 1) {
-		printf("[RC] created ");
-		value_print(v);
-		printf("\n");
-	}
-#endif
+struct value
+value_new_opaque(void *ptr)
+{
+	struct value v;
+
+	v.type = VALUE_OPAQUE;
+	v.v.ptr = ptr;
+	
+	return(v);
+}
+
+/*** structured values ***/
+
+struct s_value *
+s_value_new(unsigned char type)
+{
+	struct s_value *sv;
+
+	sv = bhuna_malloc(sizeof(struct s_value));
+	sv->next = sv_head;
+	sv_head = sv;
+	sv->admin = 0;
+	sv->type = type;
+	sv->refcount = 0;
+
+	return(sv);
+}
+
+struct value
+value_new_string(wchar_t *s)
+{
+	struct value v;
+
+	v.type = VALUE_STRING;
+	v.v.s = s_value_new(VALUE_STRING);
+	v.v.s->v.s = bhuna_wcsdup(s);
 
 	return(v);
 }
 
-struct value *
+struct value
+value_new_list(void)
+{
+	struct value v;
+
+	v.type = VALUE_LIST;
+	v.v.s = s_value_new(VALUE_LIST);
+	v.v.s->v.l = NULL;
+
+	return(v);
+}
+
+struct value
+value_new_error(char *error)
+{
+	struct value v;
+
+	v.type = VALUE_ERROR;
+	v.v.s = s_value_new(VALUE_ERROR);
+	v.v.s->v.e = strdup(error);
+
+	return(v);
+}
+
+struct value
 value_new_closure(struct ast *a, struct activation *ar, int arity, int locals, int cc)
 {
-	struct value *v;
+	struct value v;
 
-	v = value_new(VALUE_CLOSURE);
-	v->v.k = closure_new(a, ar, arity, locals, cc);
-
-#ifdef DEBUG
-	if (trace_valloc > 1) {
-		printf("[RC] created ");
-		value_print(v);
-		printf("\n");
-	}
-#endif
+	v.type = VALUE_CLOSURE;
+	v.v.s = s_value_new(VALUE_CLOSURE);
+	v.v.s->v.k = closure_new(a, ar, arity, locals, cc);
 
 	return(v);
 }
 
-struct value *
+struct value
 value_new_dict(void)
 {
-	struct value *v;
+	struct value v;
 
-	v = value_new(VALUE_DICT);
-	v->v.d = dict_new();
-
-#ifdef DEBUG
-	if (trace_valloc > 1) {
-		printf("[RC] created ");
-		value_print(v);
-		printf("\n");
-	}
-#endif
+	v.type = VALUE_DICT;
+	v.v.s = s_value_new(VALUE_DICT);
+	v.v.s->v.d = dict_new();
 
 	return(v);
 }
@@ -456,122 +269,82 @@ value_new_dict(void)
 /*** ACCESSORS ***/
 
 void
-value_list_append(struct value **v, struct value *q)
+value_list_append(struct value v, struct value q)
 {
-#ifdef DEBUG
-	if (trace_valloc > 1) {
-		printf("[list] hello ");
-		value_print(*v);
-		printf(" <- ");
-		value_print(q);
-		printf("...\n");
-	}
-#endif
-
-	if (*v == NULL) {
-		*v = value_new_list();
-	}
-
-#ifdef DEBUG
-	if (trace_valloc > 1) {
-		printf("[list] append ");
-		value_print(q);
-		printf(" to ");
-		value_print(*v);
-		printf("\n");
-	}
-#endif
-
-	list_cons(&((*v)->v.l), q);
+	list_cons(&v.v.s->v.l, q);
 }
 
 void
-value_dict_store(struct value **v, struct value *k, struct value *d)
+value_dict_store(struct value v, struct value k, struct value d)
 {
-	if (*v == NULL)
-		*v = value_new_dict();
-
-#ifdef DEBUG
-	if (trace_valloc > 1) {
-		printf("[dict] store ");
-		value_print(k);
-		printf(",");
-		value_print(d);
-		printf(" in ");
-		value_print(*v);
-		printf("\n");
-	}
-#endif
-
-	dict_store((*v)->v.d, k, d);
+	dict_store(v.v.s->v.d, k, d);
 }
 
 /*** OPERATIONS ***/
 
 void
-value_print(struct value *v)
+value_print(struct value v)
 {
-	if (v == NULL) {
-		printf("(null)");
-		return;
-	}
 	/*printf("[0x%08lx](x%d)", (unsigned long)v, v->refcount);*/
-	switch (v->type) {
+	switch (v.type) {
 	case VALUE_INTEGER:
-		printf("%d", v->v.i);
+		printf("%d", v.v.i);
 		break;
 	case VALUE_BOOLEAN:
-		printf("%s", v->v.b ? "true" : "false");
+		printf("%s", v.v.b ? "true" : "false");
 		break;
 	case VALUE_ATOM:
-		printf("atom<%d>", v->v.atom);
-		break;
-	case VALUE_STRING:
-		printf("\"%s\"", v->v.s);
-		break;
-	case VALUE_LIST:
-		list_dump(v->v.l);
-		break;
-	case VALUE_ERROR:
-		printf("#ERR<%s>", v->v.e);
+		printf("atom<%d>", v.v.a);
 		break;
 	case VALUE_BUILTIN:
-		printf("#BIF<%08lx>", (unsigned long)v->v.bi);
+		printf("#BIF<%08lx>", (unsigned long)v.v.bi);
+		break;
+	case VALUE_OPAQUE:
+		printf("#OPAQUE<%08lx>", (unsigned long)v.v.ptr);
+		break;
+
+	case VALUE_STRING:
+		printf("\"");
+		fputsu8(stdout, v.v.s->v.s);
+		printf("\"");
+		break;
+	case VALUE_LIST:
+		list_dump(v.v.s->v.l);
+		break;
+	case VALUE_ERROR:
+		printf("#ERR<%s>", v.v.s->v.e);
 		break;
 	case VALUE_CLOSURE:
-		closure_dump(v->v.k);
+		closure_dump(v.v.s->v.k);
 		break;
 	case VALUE_DICT:
-		dict_dump(v->v.d);
+		dict_dump(v.v.s->v.d);
 		break;
 	}
 }
 
 int
-value_equal(struct value *a, struct value *b)
+value_equal(struct value a, struct value b)
 {
 	int c;
-	struct list *la, *lb;
+	/* struct list *la, *lb; */
 
-	if (a == NULL && b == NULL)
-		return(1);
-	if (a == NULL || b == NULL)
-		return(0);
-	if (a->type != b->type)
+	if (a.type != b.type)
 		return(0);
 
-	switch (a->type) {
+	switch (a.type) {
 	case VALUE_INTEGER:
-		return(a->v.i == b->v.i);
+		return(a.v.i == b.v.i);
 	case VALUE_BOOLEAN:
-		return(a->v.b == b->v.b);
+		return(a.v.b == b.v.b);
 	case VALUE_ATOM:
-		return(a->v.atom == b->v.atom);
+		return(a.v.a == b.v.a);
 	case VALUE_STRING:
-		return(strcmp(a->v.s, b->v.s) == 0);
+		return(wcscmp(a.v.s->v.s, b.v.s->v.s) == 0);
 	case VALUE_LIST:
 		c = 1;
-		for (la = a->v.l, lb = b->v.l;
+	/*
+		for (la = a.v.s->v.l, lb = b.v.s->v.l;
 		     la != NULL && lb != NULL;
 		     la = la->next, lb = lb->next) {
 			if (!value_equal(la->value, lb->value)) {
@@ -579,15 +352,18 @@ value_equal(struct value *a, struct value *b)
 				break;
 			}
 		}
+	*/
 		return(c);
 	case VALUE_ERROR:
-		return(strcmp(a->v.e, b->v.e) == 0);
+		return(strcmp(a.v.s->v.e, b.v.s->v.e) == 0);
 	case VALUE_BUILTIN:
-		return(a->v.bi == b->v.bi);
+		return(a.v.bi == b.v.bi);
 	case VALUE_CLOSURE:
-		return(a->v.k == b->v.k);
+		return(a.v.s->v.k == b.v.s->v.k);
 	case VALUE_DICT:
-		return(a->v.d == b->v.d);	/* XXX !!! */
+		return(a.v.s->v.d == b.v.s->v.d);	/* XXX !!! */
+	case VALUE_OPAQUE:
+		return(a.v.ptr == b.v.ptr);
 	}
 	return(0);
 }

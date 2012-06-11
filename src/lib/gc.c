@@ -13,10 +13,6 @@
 #include "vm.h"
 #include "process.h"
 
-#ifdef POOL_VALUES
-#include "pool.h"
-#endif
-
 #ifdef DEBUG
 extern int trace_gc;
 #endif
@@ -26,12 +22,7 @@ int gc_target;
 
 extern struct activation *a_head;
 
-#ifdef HASH_CONSING
-extern struct hc_chain *hc_bucket[HASH_CONS_SIZE];
-extern struct hc_chain *hc_c;
-#else
-extern struct value *v_head;
-#endif
+extern struct s_value *sv_head;
 
 /*
  * Garbage collector.  Not a cheesy little reference counter, but
@@ -45,11 +36,11 @@ extern struct value *v_head;
 static void activation_mark(struct activation *a);
 
 static void
-value_mark(struct value *v)
+value_mark(struct value v)
 {
 	struct list *l;
 
-	if (v == NULL || v->admin & ADMIN_MARKED) /* || v->admin & ADMIN_PERMANENT) */
+	if (!(v.type & VALUE_STRUCTURED) || v.v.s->admin & ADMIN_MARKED)
 		return;
 
 #ifdef DEBUG
@@ -60,15 +51,15 @@ value_mark(struct value *v)
 	}
 #endif
 
-	v->admin |= ADMIN_MARKED;
-	switch (v->type) {
+	v.v.s->admin |= ADMIN_MARKED;
+	switch (v.type) {
 	case VALUE_LIST:
-		for (l = v->v.l; l != NULL; l = l->next) {
+		for (l = v.v.s->v.l; l != NULL; l = l->next) {
 			value_mark(l->value);
 		}
 		break;
 	case VALUE_CLOSURE:
-		activation_mark(v->v.k->ar);
+		activation_mark(v.v.s->v.k->ar);
 		break;
 	case VALUE_DICT:
 		/* XXX for each key in v->v.d, value_mark(d[k]) */
@@ -122,14 +113,9 @@ gc(void)
 	struct process *p;
 	struct activation *a, *a_next;
 	struct activation *ta_head = NULL;
-	struct value *v;
-	struct value **vsc;
-#ifdef HASH_CONSING
-	struct hc_chain **hccp;
-	struct hc_chain *hc_next, *hc_prev;
-#else
-	struct value *v_next, *tv_head = NULL;
-#endif
+
+	struct value *vsc;
+	struct s_value *sv, *sv_next, *tsv_head = NULL;
 
 	/*
 	 * Mark...
@@ -163,55 +149,23 @@ gc(void)
 
 	a_head = ta_head;
 
-#ifdef HASH_CONSING
-	for (hccp = hc_bucket; hccp - hc_bucket < HASH_CONS_SIZE; hccp++) {
-		hc_prev = NULL;
-		for (hc_c = *hccp; hc_c != NULL; hc_c = hc_next) {
-			hc_next = hc_c->next;
-			v = hc_c->v;
-			if (v->admin & ADMIN_MARKED || v->admin & ADMIN_PERMANENT) {
-				v->admin &= ~ADMIN_MARKED;
-				hc_prev = hc_c;
-			} else {
-#ifdef DEBUG
-				if (trace_gc > 1) {
-					printf("[GC] FOUND UNREACHABLE VALUE ");
-					value_print(v);
-					printf("\n");
-				}
-#endif
-				value_free(v);
-
-				if (hc_prev != NULL)
-					hc_prev->next = hc_next;
-				else
-					*hccp = hc_next;
-				bhuna_free(hc_c);
-			}
-		}
-	}
-#else
-	for (v = v_head; v != NULL; v = v_next) {
-		v_next = v->next;
-		if (v->admin & ADMIN_MARKED || v->admin & ADMIN_PERMANENT) {
-			v->admin &= ~ADMIN_MARKED;
-			v->next = tv_head;
-			tv_head = v;
+	for (sv = sv_head; sv != NULL; sv = sv_next) {
+		sv_next = sv->next;
+		if (sv->admin & ADMIN_MARKED || sv->admin & ADMIN_PERMANENT) {
+			sv->admin &= ~ADMIN_MARKED;
+			sv->next = tsv_head;
+			tsv_head = sv;
 		} else {
 #ifdef DEBUG
 			if (trace_gc > 1) {
 				printf("[GC] FOUND UNREACHABLE VALUE ");
-				value_print(v);
+				/*value_print(v);*/
 				printf("\n");
 			}
 #endif
-			value_free(v);
+			s_value_free(sv);
 		}
 	}
 
-	v_head = tv_head;
-#endif
-#ifdef POOL_VALUES
-	clean_pools();
-#endif
+	sv_head = tsv_head;
 }

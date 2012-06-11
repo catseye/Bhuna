@@ -18,4 +18,12 @@ CFLAGS+=-Os -finline-functions
 
 .ifdef PROFILED
 CFLAGS+=-pg
+.else
+NOPROFILE=yes
+.endif
+
+.ifdef STATIC
+STATIC=-static
+.else
+STATIC=
 .endif

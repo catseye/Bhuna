@@ -1,0 +1,11 @@
+//
+// Shortcuts for the Bhuna programming language.
+//
+"\\l=0x03BB",	// lambda abstraction
+"\\a=0x2200",	// foreach
+"\\e=0x2208",	// is element of
+"! 0x3D =0x2260",	// not equal to
+"< 0x3D =0x2264",	// less than or equal to
+"> 0x3D =0x2265",	// greater than or equal to
+"\\&=0x2227",	// conjunction (logical and)
+"\\|=0x2228",	// disjunction (logical or)
