@@ -1,27 +1,24 @@
-LIB=	bhuna
+DLIB=	libbhuna.so.0
+SLIB=   libbhuna.a
 
-SRCS=	report.c \
-	utf8.c scan.c parse.c \
-	symbol.c ast.c \
-	type.c \
-	mem.c pool.c gc.c \
-	list.c atom.c buffer.c closure.c dict.c value.c \
-	activation.c \
-	icode.c \
-	gen.c vm.c \
-	process.c \
-	builtin.c \
-	trace.c
+OBJS=	report.o \
+	utf8.o scan.o parse.o \
+	symbol.o ast.o \
+	type.o \
+	mem.o pool.o gc.o \
+	list.o atom.o buffer.o closure.o dict.o value.o \
+	activation.o \
+	icode.o \
+	gen.o vm.o \
+	process.o \
+	builtin.o \
+	trace.o
 
-NOMAN=	y
+all: $(DLIB)
 
-# DESTDIR=/usr/local/sbin
-strip: libbhuna.so.0 libbhuna.a
-	strip libbhuna.so.0
-	ls -lah libbhuna.so.0
+$(DLIB): $(OBJS)
+	$(CC) -o$(DLIB) $(OBJECTS)
 
-SHLIB_MAJOR=0
-USELIBDIR=/usr/local/lib
-USESHLIBDIR=/usr/local/lib
+clean:
+	rm -f *.o *.so.0 *.a
 
-.include <bsd.lib.mk>
