@@ -20,7 +20,7 @@ STATIC=
 
 #----------------------------------------
 
-LIB=libbhuna.a
+LIB=lib/libbhuna.a
 BIN=bhuna
 
 all: $(LIB) $(BIN)
@@ -56,4 +56,4 @@ $(LIB): $(LIBOBJS)
 BINOBJS=driver/main.o
 
 $(BIN): $(BINOBJS) $(LIB)
-	$(CC) $(CFLAGS) $(BINOBJS) $(STATIC) -L. -lbhuna -o $(BIN)
+	$(CC) $(CFLAGS) $(BINOBJS) $(STATIC) -Llib -lbhuna -o $(BIN)

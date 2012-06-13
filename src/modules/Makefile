@@ -1,7 +1,5 @@
 CFLAGS+=-I../lib
 
-.include "../Makefile.inc"
-
 all: io.so test
 
 test.o: test.c
@@ -14,7 +12,7 @@ io.o: io.c
 	gcc $(CFLAGS) -fpic -c io.c -o io.o
 
 io.so: io.o
-	gcc -shared -nostdlib io.o -L../lib -lbhuna -o io.so
+	gcc -shared io.o -L../lib -lbhuna -o io.so
 
 clean:
 	rm -f test *.o *.so
