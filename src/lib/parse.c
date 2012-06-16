@@ -386,7 +386,7 @@ parse_expr(struct scan_st *sc, struct symbol_table *stab, int level,
 			done = 1;
 			for (i = 0; i < 9 && op[level][i][0] != '\0'; i++) {
 				if (tokeq(sc, op[level][i])) {
-					wcslcpy(the_op, sc->token, 256);
+					wcsncpy(the_op, sc->token, 256);
 					scan(sc);
 					done = 0;
 					r = parse_expr(sc, stab, level + 1, excl, cc);

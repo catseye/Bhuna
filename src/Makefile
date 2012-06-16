@@ -12,6 +12,8 @@ CFLAGS+=-Os -finline-functions
 
 CFLAGS+=-Ilib
 
+LIBS=-ldl
+
 #CFLAGS+=-pg
 NOPROFILE=yes
 
@@ -56,4 +58,4 @@ $(LIB): $(LIBOBJS)
 BINOBJS=driver/main.o
 
 $(BIN): $(BINOBJS) $(LIB)
-	$(CC) $(CFLAGS) $(BINOBJS) $(STATIC) -Llib -lbhuna -o $(BIN)
+	$(CC) $(CFLAGS) $(BINOBJS) $(STATIC) -Llib -lbhuna $(LIBS) -o $(BIN)
