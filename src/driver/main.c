@@ -27,6 +27,9 @@
 #define RUN_PROGRAM 1
 #endif
 
+extern char *optarg;
+extern int optind, opterr, optopt;
+
 struct activation *global_ar;
 
 extern int gc_trigger;

@@ -345,6 +345,8 @@ iprogram_gen(vm_label_t *given_prog, struct iprogram *ip)
 	int bpi = 0;
 	struct closure *k[2048];
 	int ki = 0;
+        struct value *vptr;
+        struct builtin **biptr;
 
 	program = *given_prog;
 	gptr = *given_prog;
@@ -357,7 +359,10 @@ iprogram_gen(vm_label_t *given_prog, struct iprogram *ip)
 			if (ic->operand.value.type == VALUE_CLOSURE) {
 				k[ki++] = ic->operand.value.v.s->v.k;
 			}
-			*(((struct value *)gptr)++) = ic->operand.value;
+                        vptr = (struct value *)gptr;
+			*vptr = ic->operand.value;
+                        vptr++;
+                        gptr = (vm_label_t)vptr;
 			break;
 		case INSTR_PUSH_LOCAL:
 		case INSTR_POP_LOCAL:
@@ -374,7 +379,10 @@ iprogram_gen(vm_label_t *given_prog, struct iprogram *ip)
 			gptr += sizeof(vm_label_t);
 			break;
 		case INSTR_EXTERNAL:
-			*(((struct builtin **)gptr)++) = ic->operand.builtin;
+                        biptr = (struct builtin **)gptr;
+			*biptr = ic->operand.builtin;
+                        biptr++;
+                        gptr = (vm_label_t)biptr;
 			break;
 		}
 	}
