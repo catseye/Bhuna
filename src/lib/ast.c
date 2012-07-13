@@ -551,7 +551,7 @@ ast_name(struct ast *a)
 		return("AST_RETR");
 	}
 #endif
-	return("AST_UNKNOWN??!?");
+	return("AST_UNKNOWN?");
 }
 
 void

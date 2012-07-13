@@ -18,6 +18,6 @@ struct scan_st;
 extern void	report_start(void);
 extern int	report_finish(void);
 
-extern void	report(int, struct scan_st *, char *, ...);
+extern void	report(int, struct scan_st *, const char *, ...);
 
 #endif /* !__SCAN_H_ */

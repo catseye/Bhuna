@@ -82,7 +82,7 @@ struct value	value_new_opaque(void *);
 
 struct value	value_new_string(wchar_t *);
 struct value	value_new_list(void);
-struct value	value_new_error(char *);
+struct value	value_new_error(const char *);
 struct value	value_new_builtin(struct builtin *);
 struct value	value_new_closure(struct ast *, struct activation *, int, int, int);
 struct value	value_new_dict(void);

@@ -362,7 +362,7 @@ parse_formal_arg_list(struct scan_st *sc, struct symbol_table *stab,
 
 int maxlevel = 3;
 
-wchar_t *op[4][9] = {
+const wchar_t *op[4][9] = {
 	{ L"&", L"|",  L"",  L"",  L"",   L"",   L"",       L"",       L""       },
 	{ L"=", L"!=", L">", L"<", L">=", L"<=", L"\x2264", L"\x2265", L"\x2260" },
 	{ L"+", L"-",  L"",  L"",  L"",   L"",   L"",       L"",       L""       },

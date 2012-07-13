@@ -10,7 +10,7 @@ struct symbol;
 struct symbol_table;
 
 struct builtin {
-	wchar_t *name;
+	const wchar_t *name;
 	struct value (*fn)(struct activation *);
 	struct type *(*ty)(void);
 	int arity;

@@ -38,7 +38,7 @@ report_finish(void)
 }
 
 void
-report(int rtype, struct scan_st *sc, char *fmt, ...)
+report(int rtype, struct scan_st *sc, const char *fmt, ...)
 {
 	va_list args;
 	int i;

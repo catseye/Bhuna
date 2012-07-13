@@ -231,7 +231,7 @@ value_new_list(void)
 }
 
 struct value
-value_new_error(char *error)
+value_new_error(const char *error)
 {
 	struct value v;
 

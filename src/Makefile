@@ -1,10 +1,23 @@
 CC?=gcc
 
+WARNS=	-W -Wall -Wstrict-prototypes -Wmissing-prototypes \
+	-Wpointer-arith	-Wno-uninitialized -Wreturn-type -Wcast-qual \
+	-Wwrite-strings -Wswitch -Wshadow -Wcast-align -Wchar-subscripts \
+	-Winline -Wnested-externs -Wredundant-decls
+
 #CFLAGS+=-DNO_AR_STACK
 #CFLAGS+=-DPOOL_VALUES 
 CFLAGS+=-DHASH_CONSING
 CFLAGS+=-DINLINE_BUILTINS
-CFLAGS+=-Wall -ansi
+CFLAGS+=-DHAS_WCHAR_PREDS
+
+ifdef ANSI
+  CFLAGS+= -ansi -pedantic
+else
+  CFLAGS+= -std=c99 -D_POSIX_C_SOURCE=200112L
+endif
+
+CFLAGS+= ${WARNS} ${EXTRA_CFLAGS}
 
 #CFLAGS+=-g -DDEBUG
 CFLAGS+=-DNDEBUG
