@@ -8,11 +8,11 @@ Two = 2
 
 Ack = ^ M, N {
     if M = Zero
-	Return N + One
+	return N + One
     else if N = Zero
-	Return Ack(M - One, One)
+	return Ack(M - One, One)
     else
-        Return Ack(M - One, Ack(M, (N - One)))
+        return Ack(M - One, Ack(M, (N - One)))
 }
 
 Num = 7

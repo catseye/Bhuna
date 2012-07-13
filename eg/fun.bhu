@@ -1,5 +1,5 @@
 F = ^ M,N {
-  Print "Hello from F", EoL, M, EoL, N, Eol, "Goodbye from F", EoL
+  Print "Hello from F", EoL, M, EoL, N, EoL, "Goodbye from F", EoL
   return M + N
 }
 

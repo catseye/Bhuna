@@ -6,7 +6,7 @@ F = ^{
   G;
   Q = 23;
   G;
-  Return G
+  return G
 }
 
 G = F()

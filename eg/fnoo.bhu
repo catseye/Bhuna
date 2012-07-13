@@ -4,7 +4,7 @@ Sub = ^ A {
     if I > 30
       Print "*"
     else
-      Print "."
+      Print "/"
     I = I + 1
   }
 }
