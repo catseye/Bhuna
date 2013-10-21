@@ -1,0 +1,8 @@
+syntax: glob
+
+*.o
+*.a
+
+syntax: regexp
+
+src/bhuna
