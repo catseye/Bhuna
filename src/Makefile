@@ -1,3 +1,5 @@
+UNAME := $(shell uname -s)
+
 CC?=gcc
 
 WARNS=	-W -Wall -Wstrict-prototypes -Wmissing-prototypes \
@@ -25,7 +27,9 @@ CFLAGS+=-Os -finline-functions
 
 CFLAGS+=-Ilib
 
-LIBS=-ldl
+ifeq ($(UNAME),Linux)
+  LIBS=-ldl
+endif
 
 #CFLAGS+=-pg
 NOPROFILE=yes
